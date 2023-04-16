@@ -149,4 +149,4 @@ def test_image_encoder():
 #test_text_encoder()
 #test_text_loader()
 #test_image_encoder()
-test_image_loader()
+#test_image_loader()
