@@ -96,13 +96,15 @@ class RandomTextDataset(data.Dataset):
                     outputs = self.text_encoder(**inputs)
                     last_hidden_state = outputs['last_hidden_state']
                     cls_token = outputs['pooler_output']
-                    # two option, one is use cls token for encoder
+                    # couples option, one is use cls token for encoder
                     # the other one is use average pooling over hidden state
                     # we are gonna do all of them!
                     # option 1 cls token
                     embedding_dict['cls_token'] = torch.mean(cls_token, dim=0)
                     # option 2 global average pooling
                     embedding_dict['average_pooling'] = torch.mean(last_hidden_state, dim=(0,1))
+                    # option 3 global average pooling, one for each prompt
+                    embedding_dict['average_pooling_per_prompt'] = torch.mean(last_hidden_state, dim=1)
             self.text_embedding[style_description] = embedding_dict
     
     def __getitem__(self, index):
@@ -147,6 +149,6 @@ def test_image_encoder():
     print(output.keys())
 
 #test_text_encoder()
-#test_text_loader()
+test_text_loader()
 #test_image_encoder()
 #test_image_loader()
