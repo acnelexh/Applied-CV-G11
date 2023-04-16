@@ -84,7 +84,7 @@ embedding = StyTR.PatchEmbed()
 
 Trans = transformer.Transformer()
 with torch.no_grad():
-    network = StyTR.StyTrans(vgg,decoder,embedding, Trans,args)
+    network = StyTR.StyTrans()
 network.train()
 
 network.to(device)
@@ -107,9 +107,8 @@ style_iter = iter(data.DataLoader(
  
 
 optimizer = torch.optim.Adam([ 
-                              {'params': network.module.transformer.parameters()},
-                              {'params': network.module.decode.parameters()},
-                              {'params': network.module.embedding.parameters()},        
+                              {'params': network.module.encoder.parameters()},
+                              {'params': network.module.decode.parameters()},        
                               ], lr=args.lr)
 
 
@@ -128,7 +127,8 @@ for i in tqdm(range(args.max_iter)):
     # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
     content_images = next(content_iter)
     # move to GPU, if available
-    content_images = content_images.to(device)
+    for key in content_images:
+        content_images[key] = content_images[key].to(device)
 
     style_description = next(style_iter)
     for key in style_description:

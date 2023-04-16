@@ -10,6 +10,7 @@ from function import normal,normal_style
 from function import calc_mean_std
 import scipy.stats as stats
 from models.ViT_helper import DropPath, to_2tuple, trunc_normal_
+from models.transformer import Transformer, TransformerEncoder, TransformerEncoderLayer
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
@@ -44,6 +45,7 @@ decoder = nn.Sequential(
     nn.ReflectionPad2d((1, 1, 1, 1)),
     nn.Conv2d(256, 256, (3, 3)),
     nn.ReLU(),
+    nn.Upsample(scale_factor=2, mode='nearest'),
     nn.ReflectionPad2d((1, 1, 1, 1)),
     nn.Conv2d(256, 256, (3, 3)),
     nn.ReLU(),
@@ -61,6 +63,7 @@ decoder = nn.Sequential(
     nn.ReflectionPad2d((1, 1, 1, 1)),
     nn.Conv2d(64, 64, (3, 3)),
     nn.ReLU(),
+    nn.Upsample(scale_factor=2, mode='nearest'),
     nn.ReflectionPad2d((1, 1, 1, 1)),
     nn.Conv2d(64, 3, (3, 3)),
 )
@@ -138,32 +141,25 @@ class MLP(nn.Module):
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     
-    def __init__(self,encoder,decoder,PatchEmbed, transformer,args):
+    def __init__(self):
 
         super().__init__()
-        enc_layers = list(encoder.children())
-        self.enc_1 = nn.Sequential(*enc_layers[:4])  # input -> relu1_1
-        self.enc_2 = nn.Sequential(*enc_layers[4:11])  # relu1_1 -> relu2_1
-        self.enc_3 = nn.Sequential(*enc_layers[11:18])  # relu2_1 -> relu3_1
-        self.enc_4 = nn.Sequential(*enc_layers[18:31])  # relu3_1 -> relu4_1
-        self.enc_5 = nn.Sequential(*enc_layers[31:44])  # relu4_1 -> relu5_1
-        
-        for name in ['enc_1', 'enc_2', 'enc_3', 'enc_4', 'enc_5']:
-            for param in getattr(self, name).parameters():
-                param.requires_grad = False
 
         self.mse_loss = nn.MSELoss()
-        self.transformer = transformer
-        hidden_dim = transformer.d_model       
+        #self.transformer = transformer   
         self.decode = decoder
         self.embedding = PatchEmbed
 
-    def encode_with_intermediate(self, input):
-        results = [input]
-        for i in range(5):
-            func = getattr(self, 'enc_{:d}'.format(i + 1))
-            results.append(func(results[-1]))
-        return results[1:]
+        # build a solely encoder transformer
+        # to encode vision and text
+        encoder_layer = TransformerEncoderLayer(512, 8, 2048, 0.1, 'relu', True)
+
+        self.encoder = TransformerEncoder(encoder_layer, 6)
+        
+        self.fc_vision = nn.Linear(768, 512)
+        self.fc_text = nn.Linear(512, 512)
+
+        self.position_embedding = nn.Embedding(128, 512)
 
     def calc_content_loss(self, input, target):
       assert (input.size() == target.size())
@@ -186,56 +182,24 @@ class StyTrans(nn.Module):
         """
         if self.training == True:
             # training mode
-            pass
-            
-        
-        else:
-            # eval mode
-            pass
 
-        content_input = samples_c
-        style_input = samples_s
-        if isinstance(samples_c, (list, torch.Tensor)):
-            samples_c = nested_tensor_from_tensor_list(samples_c)   # support different-sized images padding is used for mask [tensor, mask] 
-        if isinstance(samples_s, (list, torch.Tensor)):
-            samples_s = nested_tensor_from_tensor_list(samples_s) 
-        
-        # ### features used to calcate loss 
-        content_feats = self.encode_with_intermediate(samples_c.tensors)
-        style_feats = self.encode_with_intermediate(samples_s.tensors)
+            content_input = samples_c['last_hidden_state']
+            style_input = samples_s['average_pooling']
 
-        ### Linear projection
-        style = self.embedding(samples_s.tensors)
-        content = self.embedding(samples_c.tensors)
-        
-        # postional embedding is calculated in transformer.py
-        pos_s = None
-        pos_c = None
+            # project content and feats to the same dim
+            content_feats = self.fc_vision(content_input)
+            style_feats = self.fc_text(style_input)
 
-        mask = None
-        hs = self.transformer(style, mask , content, pos_c, pos_s)   
-        Ics = self.decode(hs)
+            # combine content and style
+            input = torch.cat((content_feats, style_feats[:, None, :]), dim=1) 
 
-        Ics_feats = self.encode_with_intermediate(Ics)
-        loss_c = self.calc_content_loss(normal(Ics_feats[-1]), normal(content_feats[-1]))+self.calc_content_loss(normal(Ics_feats[-2]), normal(content_feats[-2]))
-        # Style loss
-        loss_s = self.calc_style_loss(Ics_feats[0], style_feats[0])
-        for i in range(1, 5):
-            loss_s += self.calc_style_loss(Ics_feats[i], style_feats[i])
-            
-        
-        Icc = self.decode(self.transformer(content, mask , content, pos_c, pos_c))
-        Iss = self.decode(self.transformer(style, mask , style, pos_s, pos_s))    
+            # add positional embedding
+            input += self.position_embedding(torch.arange(input.shape[1], device=input.device))
 
-        #Identity losses lambda 1    
-        loss_lambda1 = self.calc_content_loss(Icc,content_input)+self.calc_content_loss(Iss,style_input)
-        
-        #Identity losses lambda 2
-        Icc_feats=self.encode_with_intermediate(Icc)
-        Iss_feats=self.encode_with_intermediate(Iss)
-        loss_lambda2 = self.calc_content_loss(Icc_feats[0], content_feats[0])+self.calc_content_loss(Iss_feats[0], style_feats[0])
-        for i in range(1, 5):
-            loss_lambda2 += self.calc_content_loss(Icc_feats[i], content_feats[i])+self.calc_content_loss(Iss_feats[i], style_feats[i])
-        # Please select and comment out one of the following two sentences
-        return Ics,  loss_c, loss_s, loss_lambda1, loss_lambda2   #train
-        # return Ics    #test 
+            tokens = self.encoder(input)
+
+            # decode the tokens into image
+            image_tokens = tokens[:, :-1]
+            rearrange = image_tokens.reshape(image_tokens.shape[0], 7, 7, 512).permute(0, 3, 1, 2)
+            output = self.decode(rearrange)
+            return output 

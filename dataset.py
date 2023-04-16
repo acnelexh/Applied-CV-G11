@@ -58,8 +58,12 @@ class ImageTokenDataset(data.Dataset):
         img = torchvision.io.read_image(str(self.images[index]))
         img = self.image_processor(img)
         img['pixel_values'] = torch.tensor(img['pixel_values'])
-        img = self.image_encoder(**img)
-        return img.last_hidden_state.squeeze(0)
+
+        tokens = self.image_encoder(**img)
+        return {
+            'pixel_values': img.pixel_values.squeeze(0),
+            'last_hidden_state': tokens.last_hidden_state.squeeze(0)[1:, :]
+        }
 
     def __len__(self):
         return len(self.images)
@@ -148,7 +152,7 @@ def test_image_encoder():
     output = model(**img)
     print(output.keys())
 
-test_text_encoder()
+#test_text_encoder()
 #test_text_loader()
-test_image_encoder()
+#test_image_encoder()
 #test_image_loader()
