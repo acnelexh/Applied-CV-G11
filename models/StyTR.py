@@ -134,6 +134,7 @@ class MLP(nn.Module):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
+
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     
@@ -176,12 +177,22 @@ class StyTrans(nn.Module):
         target_mean, target_std = calc_mean_std(target)
         return self.mse_loss(input_mean, target_mean) + \
                self.mse_loss(input_std, target_std)
-    def forward(self, samples_c: NestedTensor,samples_s: NestedTensor):
+    
+    def forward(self, samples_c ,samples_s):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
 
         """
+        if self.training == True:
+            # training mode
+            pass
+            
+        
+        else:
+            # eval mode
+            pass
+
         content_input = samples_c
         style_input = samples_s
         if isinstance(samples_c, (list, torch.Tensor)):

@@ -13,7 +13,7 @@ import models.transformer as transformer
 import models.StyTR  as StyTR 
 from sampler import InfiniteSamplerWrapper
 from torchvision.utils import save_image
-
+from dataset import ImageTokenDataset, RandomTextDataset
 
 def train_transform():
     transform_list = [
@@ -40,7 +40,7 @@ def warmup_learning_rate(optimizer, iteration_count):
 
 parser = argparse.ArgumentParser()
 # Basic options
-parser.add_argument('--content_dir', default='./datasets/train2014', type=str,   
+parser.add_argument('--content_dir', default='./input_content/', type=Path,   
                     help='Directory path to a batch of content images')
 parser.add_argument('--style_dir', default='./datasets/Images', type=str,  #wikiart dataset crawled from https://www.wikiart.org/
                     help='Directory path to a batch of style images')
@@ -57,7 +57,7 @@ parser.add_argument('--max_iter', type=int, default=160000)
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--style_weight', type=float, default=10.0)
 parser.add_argument('--content_weight', type=float, default=7.0)
-parser.add_argument('--n_threads', type=int, default=16)
+parser.add_argument('--n_threads', type=int, default=0)
 parser.add_argument('--save_model_interval', type=int, default=10000)
 parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
@@ -92,10 +92,9 @@ network = nn.DataParallel(network, device_ids=[0,1])
 content_tf = train_transform()
 style_tf = train_transform()
 
-
-
-content_dataset = FlatFolderDataset(args.content_dir, content_tf)
-style_dataset = FlatFolderDataset(args.style_dir, style_tf)
+# TODO hard code for now
+content_dataset = ImageTokenDataset(args.content_dir)
+style_dataset =  RandomTextDataset(['pencil', 'fire'])
 
 content_iter = iter(data.DataLoader(
     content_dataset, batch_size=args.batch_size,
@@ -127,16 +126,22 @@ for i in tqdm(range(args.max_iter)):
         adjust_learning_rate(optimizer, iteration_count=i)
 
     # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
-    content_images = next(content_iter).to(device)
-    style_images = next(style_iter).to(device)  
-    out, loss_c, loss_s,l_identity1, l_identity2 = network(content_images, style_images)
+    content_images = next(content_iter)
+    # move to GPU, if available
+    content_images = content_images.to(device)
+
+    style_description = next(style_iter)
+    for key in style_description:
+        style_description[key] = style_description[key].to(device)
+
+    out, loss_c, loss_s,l_identity1, l_identity2 = network(content_images, style_description)
 
     if i % 100 == 0:
         output_name = '{:s}/test/{:s}{:s}'.format(
                         args.save_dir, str(i),".jpg"
                     )
         out = torch.cat((content_images,out),0)
-        out = torch.cat((style_images,out),0)
+        out = torch.cat((style_description,out),0)
         save_image(out, output_name)
 
         
