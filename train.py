@@ -63,7 +63,11 @@ parser.add_argument('--position_embedding', default='sine', type=str, choices=('
                         help="Type of positional embedding to use on top of the image features")
 parser.add_argument('--hidden_dim', default=512, type=int,
                         help="Size of the embeddings (dimension of the transformer)")
+parser.add_argument('--clip-model', type=str, default='openai/clip-vit-base-patch32',
+                        help="CLIP model to use for the encoder")
 args = parser.parse_args()
+
+args.clip_model = 'openai/clip-vit-base-patch16'
 
 USE_CUDA = torch.cuda.is_available()
 device = torch.device("cuda:0" if USE_CUDA else "cpu")
@@ -84,7 +88,7 @@ embedding = StyTR.PatchEmbed()
 
 Trans = transformer.Transformer()
 with torch.no_grad():
-    network = StyTR.StyTrans()
+    network = StyTR.StyTrans(args.clip_model)
 network.train()
 
 network.to(device)
@@ -93,8 +97,8 @@ content_tf = train_transform()
 style_tf = train_transform()
 
 # TODO hard code for now
-content_dataset = ImageTokenDataset(args.content_dir)
-style_dataset =  RandomTextDataset(['pencil', 'fire'])
+content_dataset = ImageTokenDataset(args.content_dir, clip_model=args.clip_model)
+style_dataset =  RandomTextDataset(['pencil', 'fire'], clip_model=args.clip_model)
 
 content_iter = iter(data.DataLoader(
     content_dataset, batch_size=args.batch_size,
@@ -134,57 +138,60 @@ for i in tqdm(range(args.max_iter)):
     for key in style_description:
         style_description[key] = style_description[key].to(device)
 
-    out, loss_c, loss_s,l_identity1, l_identity2 = network(content_images, style_description)
+    output_image = network(content_images, style_description)
 
-    if i % 100 == 0:
-        output_name = '{:s}/test/{:s}{:s}'.format(
-                        args.save_dir, str(i),".jpg"
-                    )
-        out = torch.cat((content_images,out),0)
-        out = torch.cat((style_description,out),0)
-        save_image(out, output_name)
+
+    # TODO
+    # Calculate losses
+    # if i % 100 == 0:
+    #     output_name = '{:s}/test/{:s}{:s}'.format(
+    #                     args.save_dir, str(i),".jpg"
+    #                 )
+    #     out = torch.cat((content_images,out),0)
+    #     out = torch.cat((style_description,out),0)
+    #     save_image(out, output_name)
 
         
-    loss_c = args.content_weight * loss_c
-    loss_s = args.style_weight * loss_s
-    loss = loss_c + loss_s + (l_identity1 * 70) + (l_identity2 * 1) 
+#     loss_c = args.content_weight * loss_c
+#     loss_s = args.style_weight * loss_s
+#     loss = loss_c + loss_s + (l_identity1 * 70) + (l_identity2 * 1) 
   
-    print(loss.sum().cpu().detach().numpy(),"-content:",loss_c.sum().cpu().detach().numpy(),"-style:",loss_s.sum().cpu().detach().numpy()
-              ,"-l1:",l_identity1.sum().cpu().detach().numpy(),"-l2:",l_identity2.sum().cpu().detach().numpy()
-              )
+#     print(loss.sum().cpu().detach().numpy(),"-content:",loss_c.sum().cpu().detach().numpy(),"-style:",loss_s.sum().cpu().detach().numpy()
+#               ,"-l1:",l_identity1.sum().cpu().detach().numpy(),"-l2:",l_identity2.sum().cpu().detach().numpy()
+#               )
        
-    optimizer.zero_grad()
-    loss.sum().backward()
-    optimizer.step()
+#     optimizer.zero_grad()
+#     loss.sum().backward()
+#     optimizer.step()
 
-    writer.add_scalar('loss_content', loss_c.sum().item(), i + 1)
-    writer.add_scalar('loss_style', loss_s.sum().item(), i + 1)
-    writer.add_scalar('loss_identity1', l_identity1.sum().item(), i + 1)
-    writer.add_scalar('loss_identity2', l_identity2.sum().item(), i + 1)
-    writer.add_scalar('total_loss', loss.sum().item(), i + 1)
+#     writer.add_scalar('loss_content', loss_c.sum().item(), i + 1)
+#     writer.add_scalar('loss_style', loss_s.sum().item(), i + 1)
+#     # writer.add_scalar('loss_identity1', l_identity1.sum().item(), i + 1)
+#     # writer.add_scalar('loss_identity2', l_identity2.sum().item(), i + 1)
+#     writer.add_scalar('total_loss', loss.sum().item(), i + 1)
 
-    if (i + 1) % args.save_model_interval == 0 or (i + 1) == args.max_iter:
-        state_dict = network.module.transformer.state_dict()
-        for key in state_dict.keys():
-            state_dict[key] = state_dict[key].to(torch.device('cpu'))
-        torch.save(state_dict,
-                   '{:s}/transformer_iter_{:d}.pth'.format(args.save_dir,
-                                                           i + 1))
+#     if (i + 1) % args.save_model_interval == 0 or (i + 1) == args.max_iter:
+#         state_dict = network.module.transformer.state_dict()
+#         for key in state_dict.keys():
+#             state_dict[key] = state_dict[key].to(torch.device('cpu'))
+#         torch.save(state_dict,
+#                    '{:s}/transformer_iter_{:d}.pth'.format(args.save_dir,
+#                                                            i + 1))
 
-        state_dict = network.module.decode.state_dict()
-        for key in state_dict.keys():
-            state_dict[key] = state_dict[key].to(torch.device('cpu'))
-        torch.save(state_dict,
-                   '{:s}/decoder_iter_{:d}.pth'.format(args.save_dir,
-                                                           i + 1))
-        state_dict = network.module.embedding.state_dict()
-        for key in state_dict.keys():
-            state_dict[key] = state_dict[key].to(torch.device('cpu'))
-        torch.save(state_dict,
-                   '{:s}/embedding_iter_{:d}.pth'.format(args.save_dir,
-                                                           i + 1))
+#         state_dict = network.module.decode.state_dict()
+#         for key in state_dict.keys():
+#             state_dict[key] = state_dict[key].to(torch.device('cpu'))
+#         torch.save(state_dict,
+#                    '{:s}/decoder_iter_{:d}.pth'.format(args.save_dir,
+#                                                            i + 1))
+#         state_dict = network.module.embedding.state_dict()
+#         for key in state_dict.keys():
+#             state_dict[key] = state_dict[key].to(torch.device('cpu'))
+#         torch.save(state_dict,
+#                    '{:s}/embedding_iter_{:d}.pth'.format(args.save_dir,
+#                                                            i + 1))
 
                                                     
-writer.close()
+# writer.close()
 
 

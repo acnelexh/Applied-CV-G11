@@ -1,16 +1,11 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-import numpy as np
-from util import box_ops
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
-                       accuracy, get_world_size, interpolate,
-                       is_dist_avail_and_initialized)
-from function import normal,normal_style
-from function import calc_mean_std
-import scipy.stats as stats
+from models.transformer import TransformerEncoder, TransformerEncoderLayer
+from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
+from template import imagenet_templates
+import math
 from models.ViT_helper import DropPath, to_2tuple, trunc_normal_
-from models.transformer import Transformer, TransformerEncoder, TransformerEncoderLayer
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
@@ -32,8 +27,7 @@ class PatchEmbed(nn.Module):
         x = self.proj(x)
 
         return x
-
-
+    
 decoder = nn.Sequential(
     nn.ReflectionPad2d((1, 1, 1, 1)),
     nn.Conv2d(512, 256, (3, 3)),
@@ -124,6 +118,14 @@ vgg = nn.Sequential(
     nn.ReLU()  # relu5-4
 )
 
+def build_decoder():
+    """
+    Built decoder automatically depending on the input size
+    Upsampling the input image Nx times
+    """
+    pass
+    #TODO
+
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
 
@@ -141,40 +143,49 @@ class MLP(nn.Module):
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     
-    def __init__(self):
+    def __init__(self, vit_pretrain_path = "openai/clip-vit-base-patch32"):
 
         super().__init__()
 
         self.mse_loss = nn.MSELoss()
         #self.transformer = transformer   
         self.decode = decoder
-        self.embedding = PatchEmbed
+
+        #clip stuff
+        self.vision_model = CLIPVisionModel.from_pretrained(vit_pretrain_path)
+        self.text_model = CLIPTextModel.from_pretrained(vit_pretrain_path)
+        self.image_processor = CLIPImageProcessor()
+        self.tokenizer = AutoTokenizer.from_pretrained(vit_pretrain_path)
+        self.freeze_clip()
 
         # build a solely encoder transformer
         # to encode vision and text
         encoder_layer = TransformerEncoderLayer(512, 8, 2048, 0.1, 'relu', True)
-
         self.encoder = TransformerEncoder(encoder_layer, 6)
         
+        # projection layers for clip tokens
         self.fc_vision = nn.Linear(768, 512)
         self.fc_text = nn.Linear(512, 512)
 
-        self.position_embedding = nn.Embedding(128, 512)
+        # learnable positional embedding
+        # dummy sample to figure out token size
+        dummy_sample = {'pixel_values': torch.zeros((1, 3, 224, 224))}
+        dummy_sample = self.vision_model(**dummy_sample)
+        img_token_length = dummy_sample.last_hidden_state.shape[1]-1
+        text_token_length = 1
+        self.position_embedding = nn.Embedding(
+            img_token_length + text_token_length, 512)
 
-    def calc_content_loss(self, input, target):
-      assert (input.size() == target.size())
-      assert (target.requires_grad is False)
-      return self.mse_loss(input, target)
+    def freeze_clip(self):
+        for param in self.vision_model.parameters():
+            param.requires_grad = False
+        for param in self.text_model.parameters():
+            param.requires_grad = False
 
-    def calc_style_loss(self, input, target):
-        assert (input.size() == target.size())
-        assert (target.requires_grad is False)
-        input_mean, input_std = calc_mean_std(input)
-        target_mean, target_std = calc_mean_std(target)
-        return self.mse_loss(input_mean, target_mean) + \
-               self.mse_loss(input_std, target_std)
+    def compose_text_with_templates(self, text: str, templates=imagenet_templates) -> list:
+        return [template.format(text) for template in templates]
     
-    def forward(self, samples_c ,samples_s):
+    def forward(self, content, style):
         """ The forward expects a NestedTensor, which consists of:
                - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
@@ -182,24 +193,43 @@ class StyTrans(nn.Module):
         """
         if self.training == True:
             # training mode
+            # input are preprocessed dictionary
+            image_tokens = content['last_hidden_state']
+            style_tokens = style['average_pooling']
+        else:
+            # eval mode
+            # the input is raw image and text
+            img = self.image_processor(content)
+            img['pixel_values'] = torch.tensor(img['pixel_values'])
+            image_tokens = self.vision_model(**img)
+            image_tokens = image_tokens.last_hidden_state[:, 1:, :]
 
-            content_input = samples_c['last_hidden_state']
-            style_input = samples_s['average_pooling']
+            template_text = [self.compose_text_with_templates(text, imagenet_templates) for text in style]
+            style_tokens = []
+            for text in template_text:
+                text_tokens =  self.tokenizer(text, padding=True, return_tensors="pt")
+                outputs = self.text_model(**text_tokens)
+                last_hidden_state = outputs['last_hidden_state']
+                #cls_token = outputs['pooler_output']
+                style_tokens.append(torch.mean(last_hidden_state, dim=(0,1)))
 
             # project content and feats to the same dim
-            content_feats = self.fc_vision(content_input)
-            style_feats = self.fc_text(style_input)
+            image_tokens = self.fc_vision(image_tokens)
+            style_tokens = self.fc_text(style_tokens)
 
-            # combine content and style
-            input = torch.cat((content_feats, style_feats[:, None, :]), dim=1) 
+        # project content and feats to the same dim
+        image_tokens = self.fc_vision(image_tokens)
+        style_tokens = self.fc_text(style_tokens)
+        # combine content and style
+        input = torch.cat((image_tokens, style_tokens[:, None, :]), dim=1) 
 
-            # add positional embedding
-            input += self.position_embedding(torch.arange(input.shape[1], device=input.device))
+        # add positional embedding
+        input += self.position_embedding(torch.arange(input.shape[1], device=input.device))
 
-            tokens = self.encoder(input)
-
-            # decode the tokens into image
-            image_tokens = tokens[:, :-1]
-            rearrange = image_tokens.reshape(image_tokens.shape[0], 7, 7, 512).permute(0, 3, 1, 2)
-            output = self.decode(rearrange)
-            return output 
+        output_tokens = self.encoder(input)
+        # decode the tokens into image
+        image_tokens = output_tokens[:, :-1]
+        D = int(math.sqrt(image_tokens.shape[1]))
+        image_features = image_tokens.reshape(image_tokens.shape[0], D, D, 512).permute(0, 3, 1, 2)
+        output = self.decode(image_features)
+        return output
