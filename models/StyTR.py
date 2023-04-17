@@ -29,39 +29,39 @@ class PatchEmbed(nn.Module):
 
         return x
     
-decoder = nn.Sequential(
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 256, (3, 3)),
-    nn.ReLU(),
-    nn.Upsample(scale_factor=2, mode='nearest'),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),
-    nn.Upsample(scale_factor=2, mode='nearest'),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 128, (3, 3)),
-    nn.ReLU(),
-    nn.Upsample(scale_factor=2, mode='nearest'),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(128, 128, (3, 3)),
-    nn.ReLU(),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(128, 64, (3, 3)),
-    nn.ReLU(),
-    nn.Upsample(scale_factor=2, mode='nearest'),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(64, 64, (3, 3)),
-    nn.ReLU(),
-    nn.Upsample(scale_factor=2, mode='nearest'),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(64, 3, (3, 3)),
-)
+# decoder = nn.Sequential(
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(512, 256, (3, 3)),
+#     nn.ReLU(),
+#     nn.Upsample(scale_factor=2, mode='nearest'),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(256, 256, (3, 3)),
+#     nn.ReLU(),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(256, 256, (3, 3)),
+#     nn.ReLU(),
+#     nn.Upsample(scale_factor=2, mode='nearest'),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(256, 256, (3, 3)),
+#     nn.ReLU(),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(256, 128, (3, 3)),
+#     nn.ReLU(),
+#     nn.Upsample(scale_factor=2, mode='nearest'),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(128, 128, (3, 3)),
+#     nn.ReLU(),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(128, 64, (3, 3)),
+#     nn.ReLU(),
+#     nn.Upsample(scale_factor=2, mode='nearest'),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(64, 64, (3, 3)),
+#     nn.ReLU(),
+#     nn.Upsample(scale_factor=2, mode='nearest'),
+#     nn.ReflectionPad2d((1, 1, 1, 1)),
+#     nn.Conv2d(64, 3, (3, 3)),
+# )
 
 vgg = nn.Sequential(
     nn.Conv2d(3, 3, (1, 1)),
@@ -127,14 +127,17 @@ def build_decoder(input_dimension, target_dimension):
     Upsampling the input image Nx times
     """
     # assert target dimension is a multiple of input dimension
+    assert(isinstance(input_dimension, int))
+    assert(isinstance(target_dimension, int))
     assert(math.log2(target_dimension/input_dimension) == int(math.log2(target_dimension/input_dimension)))
     # calcualt the number of upsmampling needed
     num_upsample = int(math.log2(target_dimension/input_dimension))
-    block = TokenDecoder(num_upsample, input_hidden_dim=512)
+    decoder = TokenDecoder(num_upsample, input_hidden_dim=512)
 
-    dummy = torch.rand(1, 512, input_dimension, input_dimension)
-    out = block(dummy)
+    dummy = torch.rand(1, 512, int(input_dimension), int(input_dimension))
+    out = decoder(dummy)
     assert out.shape == (1, 3, target_dimension, target_dimension)
+    return decoder
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -158,8 +161,6 @@ class StyTrans(nn.Module):
         super().__init__()
 
         self.mse_loss = nn.MSELoss()
-        #self.transformer = transformer   
-        self.decode = decoder
 
         #clip stuff
         self.vision_model = CLIPVisionModel.from_pretrained(vit_pretrain_path)
@@ -177,14 +178,20 @@ class StyTrans(nn.Module):
         self.fc_vision = nn.Linear(768, 512)
         self.fc_text = nn.Linear(512, 512)
 
-        # learnable positional embedding
         # dummy sample to figure out token size
-        dummy_sample = {'pixel_values': torch.zeros((1, 3, 224, 224))}
-        dummy_sample = self.vision_model(**dummy_sample)
-        img_token_length = dummy_sample.last_hidden_state.shape[1]-1
+        # calculate the input size for the model
+        dummy_sample = self.image_processor(images=torch.rand(2, 3, 224, 224))
+        image_size = int(dummy_sample.pixel_values[0].shape[1])
+
+        # calculate the token size
+        dummy_sample = self.vision_model(pixel_values=torch.rand(2, 3, image_size, image_size)) 
+        img_token_length = dummy_sample.last_hidden_state.shape[1] - 1
         text_token_length = 1
+        # learnable positional embedding
         self.position_embedding = nn.Embedding(
             img_token_length + text_token_length, 512)
+        # decoder
+        self.decode = build_decoder(int(math.sqrt(img_token_length)), int(image_size))
 
     def freeze_clip(self):
         for param in self.vision_model.parameters():

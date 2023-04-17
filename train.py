@@ -79,14 +79,13 @@ if not os.path.exists(args.log_dir):
     os.mkdir(args.log_dir)
 writer = SummaryWriter(log_dir=args.log_dir)
 
-vgg = StyTR.vgg
-vgg.load_state_dict(torch.load(args.vgg))
-vgg = nn.Sequential(*list(vgg.children())[:44])
+# vgg = StyTR.vgg
+# vgg.load_state_dict(torch.load(args.vgg))
+# vgg = nn.Sequential(*list(vgg.children())[:44])
 
-decoder = StyTR.decoder
-embedding = StyTR.PatchEmbed()
+#embedding = StyTR.PatchEmbed()
 
-Trans = transformer.Transformer()
+#Trans = transformer.Transformer()
 with torch.no_grad():
     network = StyTR.StyTrans(args.clip_model)
 network.train()
