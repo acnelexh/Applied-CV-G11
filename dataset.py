@@ -42,11 +42,11 @@ class ImageTokenDataset(data.Dataset):
     '''
     Dataset that uses clip image encoder to encode image into tokens
     '''
-    def __init__(self, image_dir: Path):
+    def __init__(self, image_dir: Path, clip_model: str = "openai/clip-vit-base-patch32"):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
-        self.image_encoder = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.image_encoder = CLIPVisionModel.from_pretrained(clip_model)
         self.image_embedding = dict()
 
         self.images = [f for f in self.image_dir.glob('*')]
@@ -73,12 +73,12 @@ class RandomTextDataset(data.Dataset):
     '''
     Dataset that returns random text descript for style transfer
     '''
-    def __init__(self, text=['fire', 'pencil', 'water'], prompt_engineering=True):
+    def __init__(self, text=['fire', 'pencil', 'water'], prompt_engineering=True, clip_model: str = "openai/clip-vit-base-patch32"):
         super(RandomTextDataset, self).__init__()
         self.text = text
         self.prompt_engineering = prompt_engineering
-        self.tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
-        self.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
+        self.tokenizer = AutoTokenizer.from_pretrained(clip_model)
+        self.text_encoder = CLIPTextModel.from_pretrained(clip_model)
         self.text_embedding = dict() # storing the 3 kinds of text embedding for each text
         self.index_to_text = dict()
 

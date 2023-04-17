@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPV
 from template import imagenet_templates
 import math
 from models.ViT_helper import DropPath, to_2tuple, trunc_normal_
+from models.unet import TokenDecoder
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
@@ -118,13 +119,22 @@ vgg = nn.Sequential(
     nn.ReLU()  # relu5-4
 )
 
-def build_decoder():
+
+
+def build_decoder(input_dimension, target_dimension):
     """
     Built decoder automatically depending on the input size
     Upsampling the input image Nx times
     """
-    pass
-    #TODO
+    # assert target dimension is a multiple of input dimension
+    assert(math.log2(target_dimension/input_dimension) == int(math.log2(target_dimension/input_dimension)))
+    # calcualt the number of upsmampling needed
+    num_upsample = int(math.log2(target_dimension/input_dimension))
+    block = TokenDecoder(num_upsample, input_hidden_dim=512)
+
+    dummy = torch.rand(1, 512, input_dimension, input_dimension)
+    out = block(dummy)
+    assert out.shape == (1, 3, target_dimension, target_dimension)
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -233,3 +243,9 @@ class StyTrans(nn.Module):
         image_features = image_tokens.reshape(image_tokens.shape[0], D, D, 512).permute(0, 3, 1, 2)
         output = self.decode(image_features)
         return output
+
+
+def test_model():
+    build_decoder(14, 224)
+
+#test_model()
