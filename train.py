@@ -42,7 +42,7 @@ def encode_img(image, image_processor, image_encoder):
     image = image_processor(image)
     image['pixel_values'] = torch.tensor(image['pixel_values']) #?
     image = image_encoder(**image)
-    return image.last_hidden_state.squeeze(0)
+    return image.last_hidden_state.squeeze(0)[1:,:] # (196,768)
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
@@ -84,7 +84,7 @@ parser.add_argument('--log_dir', default='./logs',
 parser.add_argument('--lr', type=float, default=5e-4)
 parser.add_argument('--lr_decay', type=float, default=1e-5)
 parser.add_argument('--max_iter', type=int, default=160000)
-parser.add_argument('--batch_size', type=int, default=8)
+parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--style_weight', type=float, default=10.0)
 parser.add_argument('--content_weight', type=float, default=7.0)
 parser.add_argument('--save_model_interval', type=int, default=10000)
@@ -206,6 +206,10 @@ for i in tqdm(range(args.max_iter)):
         source_texts[key] = source_texts[key].to(device)
 
     targets = network(content_images, style_texts)
+    targets = targets.reshape((targets.shape[0], targets.shape[1], -1))
+    targets -= torch.min(targets, dim=2, keepdim=True)[0]
+    targets /= torch.max(targets, dim=2, keepdim=True)[0]
+    targets = targets.reshape((targets.shape[0],targets.shape[1], 224, 224))
 
     content_features = [] # list of dict
     for i in content_images['pixel_values']:
@@ -222,26 +226,45 @@ for i in tqdm(range(args.max_iter)):
 
     patch_loss = 0
     img_aug = []
+    print("targets shape", targets.shape)
     for target in targets:
+        # t = target < 0
+        # if False in t:
+        #     print("target causing exit", target)
+        #     exit()
         for n in range(num_crops):
             target_crop = cropper(target)
             target_crop = augment(target_crop)
             img_aug.append(target_crop)
     
     # patch loss  
+    # content_images['last_hidden_state'][0].shape is 196x768
+    crop_features = [encode_img(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
+    img_aug_features = []
+    # TODO: unfinished
+    for i in range(args.batch_size):
+        crop_cat = torch.zeros(img_aug_features[0].shape)
+        
     img_aug_features = [encode_img(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
-    img_aug_features = torch.tensor(img_aug_features)
+    #img_aug_features = torch.cat(img_aug_features) # prob cat and just single for loop below
+    cat_features = torch.zeros(img_aug_features.shape)
+    
     img_aug_features /= (img_aug_features.clone().norm(dim=-1, keepdim=True)) # TODO: check dim
-    img_direction = img_aug_features - source_features # might need for loop when implement later, should provide indexing for source_features.
-
-    text_direction = (style_texts - source_texts).repeat(img_aug_features.size(0),1) # TODO: check dim
+    img_direction = torch.zeros(img_aug_features[0].shape)
+    # TODO: img_aug_features[i] should be the sum of the tensors of the crops of image i in img_aug_features
+    for i in range(args.batch_size):
+        #for c in range(num_crops):
+        img_direction += img_aug_features[i] - content_images['last_hidden_state'][i]
+    #img_direction = img_aug_features - source_features # might need for loop when implement later, should provide indexing for source_features.
+    
+    text_direction = (style_texts['average_pooling'] - source_texts['average_pooling']).repeat(img_aug_features.size(0),1) # TODO: check dim
     text_direction /= text_direction.norm(dim=-1, keepdim=True)
-    tmp_loss = (1- torch.consine_similarity(img_direction, text_direction, dim=1))
+    tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
     tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
     patch_loss += tmp_loss.mean()
 
     # global loss
-    glob_features = [encode_img(i, image_processor, image_encoder) for i in targets] # TODO: should provide index to get embeddings.
+    glob_features = [encode_img(i, image_processor, image_encoder) for i in targets['pixel_values']] # TODO: should provide index to get embeddings.
     
     glob_direction = (glob_features - source_features)
     glob_direction /= glob_direction.clone().norm(dim=-1, keepdim=True)
@@ -284,11 +307,11 @@ for i in tqdm(range(args.max_iter)):
     writer.add_scalar('TV loss: ', var_loss.item())
 
     if (i + 1) % args.save_model_interval == 0 or (i + 1) == args.max_iter:
-        state_dict = network.module.encoder.state_dict()
+        state_dict = network.state_dict()
         for key in state_dict.keys():
             state_dict[key] = state_dict[key].to(torch.device('cpu'))
         torch.save(state_dict,
-                   '{:s}/encoder_iter_{:d}.pth'.format(args.save_dir,
+                   '{:s}/iter_{:d}.pth'.format(args.save_dir,
                                                            i + 1))
                                                    
 writer.close()
