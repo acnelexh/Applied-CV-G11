@@ -4,7 +4,7 @@ import os
 import torch
 import torchvision
 from PIL import Image
-from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
+from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel, CLIPVisionModelWithProjection
 from template import imagenet_templates
 
 class FlatFolderDataset(data.Dataset):
@@ -123,12 +123,15 @@ def test_text_encoder():
     "why not use both?"
     text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
     tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
-    input_prompts = [template.format("pencil style") for template in imagenet_templates]
+    #input_prompts = [template.format("pencil style") for template in imagenet_templates]
+    input_prompts = ['apple']
     inputs = tokenizer(input_prompts, padding=True, return_tensors="pt")
     outputs = text_encoder(**inputs)
 
     print(len(imagenet_templates))
     print(outputs['last_hidden_state'].shape)
+    print(outputs['pooler_output'].shape)
+    print(outputs['pooler_output'] == outputs['last_hidden_state'][-1])
 
 
 def test_text_loader():
@@ -151,8 +154,12 @@ def test_image_encoder():
     img['pixel_values'] = torch.tensor(img['pixel_values'])
     output = model(**img)
     print(output.keys())
+    l = torch.nn.Linear(768,512)
+    o = l(output['last_hidden_state'])
+    print(output['last_hidden_state'].shape)
+    print(o.shape)
 
 #test_text_encoder()
 #test_text_loader()
-#test_image_encoder()
+test_image_encoder()
 #test_image_loader()

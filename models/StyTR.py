@@ -191,7 +191,7 @@ class StyTrans(nn.Module):
         self.position_embedding = nn.Embedding(
             img_token_length + text_token_length, 512)
         # decoder
-        self.decode = build_decoder(int(math.sqrt(img_token_length)), int(image_size))
+        self.decoder = build_decoder(int(math.sqrt(img_token_length)), int(image_size))
 
     def freeze_clip(self):
         for param in self.vision_model.parameters():
@@ -248,7 +248,7 @@ class StyTrans(nn.Module):
         image_tokens = output_tokens[:, :-1]
         D = int(math.sqrt(image_tokens.shape[1]))
         image_features = image_tokens.reshape(image_tokens.shape[0], D, D, 512).permute(0, 3, 1, 2)
-        output = self.decode(image_features)
+        output = self.decoder(image_features)
         return output
 
 
