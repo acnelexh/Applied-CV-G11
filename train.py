@@ -1,43 +1,29 @@
 import argparse
 import os
 import torch
-import torch.nn as nn
 import clip
 import torch.utils.data as data
-from PIL import Image
-from PIL import ImageFile
 from tensorboardX import SummaryWriter
 from torchvision import transforms, models
 from tqdm import tqdm
 from pathlib import Path
-import models.transformer as transformer
 import models.StyTR  as StyTR 
 from sampler import InfiniteSamplerWrapper
 from torchvision.utils import save_image
-from dataset import FlatFolderDataset, ImageTokenDataset, RandomTextDataset
+from dataset import ImageTokenDataset, RandomTextDataset
 
-from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
-from template import imagenet_templates
+from transformers import CLIPImageProcessor, CLIPVisionModel
 from util.clip_utils import get_features
 
-def train_transform():
-    transform_list = [
-        transforms.Resize(size=(512, 512)),
-        transforms.RandomCrop(256),
-        transforms.ToTensor()
-    ]
-    return transforms.Compose(transform_list)
-
-def img_normalize(image):
-    # TODO
-    device = 'cpu'
-    mean=torch.tensor([0.485, 0.456, 0.406]).to(device)
-    std=torch.tensor([0.229, 0.224, 0.225]).to(device)
-    mean = mean.view(1,-1,1,1)
-    std = std.view(1,-1,1,1)
-
-    image = (image-mean)/std
-    return image
+class VGGNormalizer():
+    def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+        self.mean = torch.tensor(mean).view(1,-1,1,1).to(device)
+        self.std = torch.tensor(std).view(1,-1,1,1).to(device)
+        self.transform = transforms.Compose(
+            [transforms.Resize(size=(224, 224))])
+    
+    def __call__(self, x):
+        return self.transform((x-self.mean)/self.std)
 
 def encode_img(image, image_processor, image_encoder):
     image = image_processor(image)
@@ -102,7 +88,7 @@ parser.add_argument('--lambda_c', type=float, default=150)
 parser.add_argument('--n_threads', type=int, default=0)
 parser.add_argument('--thresh', type=float, default=0.7)
 parser.add_argument('--crop_size', type=int, default=128)
-parser.add_argument('--num_crops', type=int, default=64)
+parser.add_argument('--num_crops', type=int, default=4)
 parser.add_argument('--device', type=str, default='cuda:0')
 args = parser.parse_args()
 
@@ -117,13 +103,7 @@ if not os.path.exists(args.log_dir):
     os.mkdir(args.log_dir)
 writer = SummaryWriter(log_dir=args.log_dir)
 
-# vgg = StyTR.vgg
-# vgg.load_state_dict(torch.load(args.vgg))
-# vgg = nn.Sequential(*list(vgg.children())[:44])
 
-#embedding = StyTR.PatchEmbed()
-
-#Trans = transformer.Transformer()
 with torch.no_grad():
     network = StyTR.StyTrans(args.clip_model)
 network.to(device)
@@ -135,14 +115,14 @@ for parameter in vgg.parameters():
 
 
 #network = nn.DataParallel(network, device_ids=[0,1]) # probably don't need it 
-# content_tf = train_transform()
-# style_tf = train_transform()
+
 _, preprocess = clip.load("ViT-B/32", device=device)
 content_dataset = ImageTokenDataset(
     args.content_dir,
     clip_model=args.clip_model,
     device=args.device,
-    source_transform=preprocess)
+    clip_transform=preprocess,
+    vgg_transform=VGGNormalizer(args.device))    
 style_dataset = RandomTextDataset(
     args.style_texts,
     clip_model=args.clip_model,
@@ -202,7 +182,7 @@ for i in tqdm(range(args.max_iter)):
         adjust_learning_rate(optimizer, iteration_count=i)
 
     # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
-    content_images, source_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
+    content_images, clip_images, vgg_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
     style_texts = next(style_iter)
     source_texts = next(source_iter)
 
@@ -213,12 +193,14 @@ for i in tqdm(range(args.max_iter)):
     targets = targets.reshape((targets.shape[0],targets.shape[1], 224, 224))
 
     content_features = [] # list of dict
-    for i in content_images['pixel_values']:
-        content_features.append(get_features(img_normalize(i), vgg)) # TODO: IMPORTANT, get_features needs raw images, not embeddings
+    
+    for vgg_img in vgg_images:
+        content_features.append(get_features(vgg_img, vgg)) # TODO: IMPORTANT, get_features needs raw images, not embeddings
 
     target_features = [] # dict of hidden state from vgg of images
-    for i in targets:
-        target_features.append(get_features(img_normalize(i), vgg)) 
+    VGGNORM = VGGNormalizer(args.device)
+    for target_img in targets:
+        target_features.append(get_features(VGGNORM(target_img), vgg)) 
 
     content_loss = 0
     for i in range(len(target_features)):
@@ -229,10 +211,6 @@ for i in tqdm(range(args.max_iter)):
     img_aug = []
     print("targets shape", targets.shape)
     for target in targets:
-        # t = target < 0
-        # if False in t:
-        #     print("target causing exit", target)
-        #     exit()
         for n in range(num_crops):
             target_crop = cropper(target)
             target_crop = augment(target_crop)
@@ -240,7 +218,7 @@ for i in tqdm(range(args.max_iter)):
     
     # patch loss  
     # content_images['last_hidden_state'][0].shape is 196x768
-    crop_features = [encode_img(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
+    crop_features = [(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
     img_aug_features = []
     # TODO: unfinished
     for i in range(args.batch_size):

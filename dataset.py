@@ -41,14 +41,14 @@ class ImageTokenDataset(data.Dataset):
                 image_dir: Path,
                 clip_model: str = "openai/clip-vit-base-patch32",
                 device='cpu',
-                source_transform=None):
+                clip_transform=None,
+                vgg_transform=None):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
-        self.image_encoder = CLIPVisionModel.from_pretrained(clip_model)
-        self.image_embedding = dict()
         self.device = device
-        self.source_transform = source_transform
+        self.clip_transform = clip_transform
+        self.vgg_transform = vgg_transform
 
         self.images = [f for f in self.image_dir.glob('*')]
 
@@ -57,10 +57,14 @@ class ImageTokenDataset(data.Dataset):
         Return processed images
         One is preprocessed by CLIPImageProcessor, one is by source transform
         ''' 
-        img = self.image_processor(torchvision.io.read_image(str(self.images[index])))
+        raw_img = torchvision.io.read_image(str(self.images[index])).to(self.device)
+        img = self.image_processor(raw_img)
         img = torch.tensor(np.array(img['pixel_values'])).squeeze(0).to(self.device)
-        source_img = self.source_transform(Image.open(self.images[index])).to(self.device)
-        return img, source_img
+        #source_img = torchvision.io.read_image(str(self.images[index]))
+        clip_img = self.clip_transform(Image.open(self.images[index])).to(self.device)
+        vgg_img = self.vgg_transform(raw_img).squeeze(0)
+        # for model, pathloss, vgg content loss
+        return img, clip_img, vgg_img
 
     def __len__(self):
         return len(self.images)
