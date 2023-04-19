@@ -244,35 +244,46 @@ for i in tqdm(range(args.max_iter)):
     img_aug_features = []
     # TODO: unfinished
     for i in range(args.batch_size):
-        crop_cat = torch.zeros(img_aug_features[0].shape)
+        crop_cat = torch.zeros(crop_features[0].shape)
+        for j in range(args.num_crops):
+            crop_cat += crop_features[i * num_crops + j]
+        img_aug_features.append(crop_cat)
         
-    img_aug_features = [encode_img(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
-    #img_aug_features = torch.cat(img_aug_features) # prob cat and just single for loop below
-    cat_features = torch.zeros(img_aug_features.shape)
+    #img_aug_features = [encode_img(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
+    img_aug_features = torch.stack(img_aug_features)
+    #cat_features = torch.zeros(img_aug_features.shape)
     
-    img_aug_features /= (img_aug_features.clone().norm(dim=-1, keepdim=True)) # TODO: check dim
+    #img_aug_features /= (img_aug_features.clone().norm(dim=-1, keepdim=True)) # TODO: check dim
     img_direction = torch.zeros(img_aug_features[0].shape)
-    # TODO: img_aug_features[i] should be the sum of the tensors of the crops of image i in img_aug_features
+    # img_aug_features[i] should be the sum of the tensors of the crops of image i in img_aug_features
     for i in range(args.batch_size):
         #for c in range(num_crops):
-        img_direction += img_aug_features[i] - content_images['last_hidden_state'][i]
+        img_direction += img_aug_features[i] - content_images['last_hidden_state'][i] * num_crops
     #img_direction = img_aug_features - source_features # might need for loop when implement later, should provide indexing for source_features.
     
+    #text_direction = (style_texts['average_pooling'] - source_texts['average_pooling']).repeat(img_aug_features.size(0),1) # TODO: check dim
     text_direction = (style_texts['average_pooling'] - source_texts['average_pooling']).repeat(img_aug_features.size(0),1) # TODO: check dim
     text_direction /= text_direction.norm(dim=-1, keepdim=True)
-    tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
-    tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
+    ########### TODO: temporaily ignore!!
+    # tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
+    # tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
+    tmp_loss = torch.randn(64)
     patch_loss += tmp_loss.mean()
+    ################################
 
     # global loss
-    glob_features = [encode_img(i, image_processor, image_encoder) for i in targets['pixel_values']] # TODO: should provide index to get embeddings.
+    glob_features = [encode_img(i, image_processor, image_encoder) for i in targets]
     
     glob_direction = (glob_features - source_features)
     glob_direction /= glob_direction.clone().norm(dim=-1, keepdim=True)
 
     glob_loss = (1 - torch.cosine_similarity(glob_direction, text_direction, dim=1)).mean()
 
-    var_loss = get_image_prior_losses(targets) # total variation loss
+    #var_loss = get_image_prior_losses(targets) # total variation loss, should loop
+    var_loss = 0
+    for i in targets:
+        img = i.unsqueeze(0)
+        var_loss += get_image_prior_losses(img)
 
     total_loss = args.lambda_patch * patch_loss + args.content_weight * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
     total_loss_epoch.append(total_loss)
