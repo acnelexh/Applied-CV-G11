@@ -11,7 +11,7 @@ import models.StyTR  as StyTR
 from sampler import InfiniteSamplerWrapper
 from torchvision.utils import save_image
 from dataset import ImageTokenDataset, RandomTextDataset
-from loss import get_content_loss, get_img_direction, get_text_direction
+from loss import get_content_loss, get_img_direction, get_text_direction, get_patch_loss, get_glob_loss
 from transformers import CLIPImageProcessor, CLIPVisionModel
 from util.clip_utils import get_features
 
@@ -171,44 +171,31 @@ image_processor = CLIPImageProcessor(device=args.device)
 image_encoder = CLIPVisionModel.from_pretrained(args.clip_model)
 source_features = None #TODO: raw images, not embedding
 
-for i in tqdm(range(args.max_iter)):
+for iteration in tqdm(range(args.max_iter)):
     #warm up
-    if i < 1e4:
-        warmup_learning_rate(optimizer, iteration_count=i)
+    if iteration < 1e4:
+        warmup_learning_rate(optimizer, iteration_count=iteration)
     else:
-        adjust_learning_rate(optimizer, iteration_count=i)
+        adjust_learning_rate(optimizer, iteration_count=iteration)
 
     # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
     content_images, clip_images, vgg_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
     style_texts = next(style_iter)
     source_texts = next(source_iter)
-
     
     targets = network(content_images, style_texts)
     
     content_loss = get_content_loss(vgg_images, targets, device=args.device)
     
-    
-    # patch loss  ===========================================================================
-    patch_loss = 0
-    
-    img_direction = get_img_direction(clip_images, targets, args)
+    img_direction = get_img_direction(clip_images, targets, args, patch=True)
     text_direction = get_text_direction(style_texts, source_texts)
     
-    ########### TODO: temporaily ignore!!
-    # tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
-    # tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
-    tmp_loss = torch.randn(64)
-    patch_loss += tmp_loss.mean()
-    ################################
+    # patch loss 
+    patch_loss = get_patch_loss(img_direction, text_direction, args)
 
     # global loss
-    glob_features = [encode_img(i, image_processor, image_encoder) for i in targets]
-    
-    glob_direction = (glob_features - source_features)
-    glob_direction /= glob_direction.clone().norm(dim=-1, keepdim=True)
-
-    glob_loss = (1 - torch.cosine_similarity(glob_direction, text_direction, dim=1)).mean()
+    img_direction = get_img_direction(clip_images, targets, args, patch=False)
+    glob_loss = get_glob_loss(img_direction, text_direction)
 
     #var_loss = get_image_prior_losses(targets) # total variation loss, should loop
     var_loss = 0
@@ -223,39 +210,27 @@ for i in tqdm(range(args.max_iter)):
     optimizer.step()
     ####
 
-    if i % 50 == 0:
-        # output_name = '{:s}/test/{:s}{:s}'.format(
-        #                 args.save_dir, str(i),".jpg"
-        #             )
-        # out = torch.cat((content_images,out),0)
-        # out = torch.cat((style_images,out),0)
-        # save_image(out, output_name)
-        print("After %d criterions:" % i)
+    if iteration % 50 == 0:
+        print("After %d criterions:" % iteration)
         print('Total loss: ', total_loss.item())
         print('Content loss: ', content_loss.item())
         print('patch loss: ', patch_loss.item())
         print('dir loss: ', glob_loss.item())
         print('TV loss: ', var_loss.item())
 
-
-    # writer.add_scalar('loss_content', loss_c.sum().item(), i + 1)
-    # writer.add_scalar('loss_style', loss_s.sum().item(), i + 1)
-    # writer.add_scalar('loss_identity1', l_identity1.sum().item(), i + 1)
-    # writer.add_scalar('loss_identity2', l_identity2.sum().item(), i + 1)
-    # writer.add_scalar('total_loss', loss.sum().item(), i + 1)
-    writer.add_scaler('Total loss: ', total_loss.item())
+    writer.add_scalar('Total loss: ', total_loss.item())
     writer.add_scalar('Content loss ', content_loss.item())
     writer.add_scalar('patch loss: ', patch_loss.item())
     writer.add_scalar('dir loss: ', glob_loss.item())
     writer.add_scalar('TV loss: ', var_loss.item())
 
-    if (i + 1) % args.save_model_interval == 0 or (i + 1) == args.max_iter:
+    if (iteration + 1) % args.save_model_interval == 0 or (iteration + 1) == args.max_iter:
         state_dict = network.state_dict()
         for key in state_dict.keys():
             state_dict[key] = state_dict[key].to(torch.device('cpu'))
         torch.save(state_dict,
                    '{:s}/iter_{:d}.pth'.format(args.save_dir,
-                                                           i + 1))
+                                                           iteration + 1))
                                                    
 writer.close()
 

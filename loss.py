@@ -66,9 +66,9 @@ def encode_img(images, device='cpu', preprocess=True):
         image_features = model.encode_image(images)
     return image_features
 
-def get_img_direction(input_img, output_img, args):
+def get_patches(imgs, args):
     '''
-    Calculate image direction
+    Generate patches
     '''
     cropper = transforms.Compose(
         [transforms.RandomCrop(args.crop_size)]
@@ -78,20 +78,45 @@ def get_img_direction(input_img, output_img, args):
          transforms.Resize(224)]
         )
     img_aug = []
-    for target in output_img:
+    for target in imgs:
         for _ in range(args.num_crops):
             target_crop = cropper(target)
             target_crop = augment(target_crop)
             img_aug.append(target_crop)
     img_aug = torch.stack(img_aug, dim=0)
-
-    crop_features = encode_img(img_aug, device=args.device) # (batch_size x num_crops) x 512
-    crop_features = crop_features.reshape((args.batch_size, args.num_crops, -1))
-    image_features = torch.sum(crop_features, dim=1).clone()
-
-    source_features = encode_img(input_img, device=args.device, preprocess=False)
     
+    return img_aug
+
+def get_img_direction(input_img, output_img, args, patch=False):
+    '''
+    Calculate image direction
+    '''
+    if patch == True:
+        output_img = get_patches(output_img, args)
+        crop_features = encode_img(output_img, device=args.device) # (batch_size x num_crops) x 512
+        crop_features = crop_features.reshape((args.batch_size, args.num_crops, -1))
+        image_features = torch.sum(crop_features, dim=1).clone()
+    else:
+        image_features = encode_img(output_img, device=args.device) # batch_size x 512
+        
+    source_features = encode_img(input_img, device=args.device, preprocess=False)
+
     img_direction = (image_features-source_features)
     img_direction /= img_direction.clone().norm(dim=-1, keepdim=True)
 
     return img_direction
+
+def get_patch_loss(img_direction, text_direction, args):
+    '''
+    Calculate patch loss
+    '''
+    tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
+    tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
+    #tmp_loss = torch.randn(64)
+    patch_loss = tmp_loss.mean()
+
+    return patch_loss
+
+def get_glob_loss(image_direction, text_direction):
+    glob_loss = (1 - torch.cosine_similarity(image_direction, text_direction, dim=1)).mean()
+    return glob_loss
