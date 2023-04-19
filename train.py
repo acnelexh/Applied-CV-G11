@@ -2,6 +2,7 @@ import argparse
 import os
 import torch
 import torch.nn as nn
+import clip
 import torch.utils.data as data
 from PIL import Image
 from PIL import ImageFile
@@ -84,7 +85,7 @@ parser.add_argument('--log_dir', default='./logs',
 parser.add_argument('--lr', type=float, default=5e-4)
 parser.add_argument('--lr_decay', type=float, default=1e-5)
 parser.add_argument('--max_iter', type=int, default=160000)
-parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--style_weight', type=float, default=10.0)
 parser.add_argument('--content_weight', type=float, default=7.0)
 parser.add_argument('--save_model_interval', type=int, default=10000)
@@ -102,6 +103,7 @@ parser.add_argument('--n_threads', type=int, default=0)
 parser.add_argument('--thresh', type=float, default=0.7)
 parser.add_argument('--crop_size', type=int, default=128)
 parser.add_argument('--num_crops', type=int, default=64)
+parser.add_argument('--device', type=str, default='cuda:0')
 args = parser.parse_args()
 
 
@@ -135,9 +137,16 @@ for parameter in vgg.parameters():
 #network = nn.DataParallel(network, device_ids=[0,1]) # probably don't need it 
 # content_tf = train_transform()
 # style_tf = train_transform()
-
-content_dataset = ImageTokenDataset(args.content_dir, clip_model=args.clip_model)
-style_dataset = RandomTextDataset(args.style_texts, clip_model=args.clip_model) #TODO: try multiple styles?
+_, preprocess = clip.load("ViT-B/32", device=device)
+content_dataset = ImageTokenDataset(
+    args.content_dir,
+    clip_model=args.clip_model,
+    device=args.device,
+    source_transform=preprocess)
+style_dataset = RandomTextDataset(
+    args.style_texts,
+    clip_model=args.clip_model,
+    device=args.device) #TODO: try multiple styles?
 
 # probably shouldn't do this if not necessary, wasting mem
 source = ["a photo"] * len(args.style_texts)
@@ -193,17 +202,9 @@ for i in tqdm(range(args.max_iter)):
         adjust_learning_rate(optimizer, iteration_count=i)
 
     # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
-    content_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
-    for key in content_images:
-        content_images[key] = content_images[key].to(device)
-
+    content_images, source_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
     style_texts = next(style_iter)
-    for key in style_texts:
-        style_texts[key] = style_texts[key].to(device)
-
     source_texts = next(source_iter)
-    for key in source_texts:
-        source_texts[key] = source_texts[key].to(device)
 
     targets = network(content_images, style_texts)
     targets = targets.reshape((targets.shape[0], targets.shape[1], -1))

@@ -28,40 +28,6 @@ class PatchEmbed(nn.Module):
         x = self.proj(x)
 
         return x
-    
-# decoder = nn.Sequential(
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(512, 256, (3, 3)),
-#     nn.ReLU(),
-#     nn.Upsample(scale_factor=2, mode='nearest'),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(256, 256, (3, 3)),
-#     nn.ReLU(),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(256, 256, (3, 3)),
-#     nn.ReLU(),
-#     nn.Upsample(scale_factor=2, mode='nearest'),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(256, 256, (3, 3)),
-#     nn.ReLU(),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(256, 128, (3, 3)),
-#     nn.ReLU(),
-#     nn.Upsample(scale_factor=2, mode='nearest'),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(128, 128, (3, 3)),
-#     nn.ReLU(),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(128, 64, (3, 3)),
-#     nn.ReLU(),
-#     nn.Upsample(scale_factor=2, mode='nearest'),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(64, 64, (3, 3)),
-#     nn.ReLU(),
-#     nn.Upsample(scale_factor=2, mode='nearest'),
-#     nn.ReflectionPad2d((1, 1, 1, 1)),
-#     nn.Conv2d(64, 3, (3, 3)),
-# )
 
 vgg = nn.Sequential(
     nn.Conv2d(3, 3, (1, 1)),
@@ -156,7 +122,7 @@ class MLP(nn.Module):
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     
-    def __init__(self, vit_pretrain_path = "openai/clip-vit-base-patch32"):
+    def __init__(self, vit_pretrain_path = "openai/clip-vit-base-patch32", input_size=224):
 
         super().__init__()
 
@@ -165,7 +131,7 @@ class StyTrans(nn.Module):
         #clip stuff
         self.vision_model = CLIPVisionModel.from_pretrained(vit_pretrain_path)
         self.text_model = CLIPTextModel.from_pretrained(vit_pretrain_path)
-        self.image_processor = CLIPImageProcessor()
+        #self.image_processor = CLIPImageProcessor()
         self.tokenizer = AutoTokenizer.from_pretrained(vit_pretrain_path)
         self.freeze_clip()
 
@@ -178,20 +144,15 @@ class StyTrans(nn.Module):
         self.fc_vision = nn.Linear(768, 512)
         self.fc_text = nn.Linear(512, 512)
 
-        # dummy sample to figure out token size
-        # calculate the input size for the model
-        dummy_sample = self.image_processor(images=torch.rand(2, 3, 224, 224))
-        image_size = int(dummy_sample.pixel_values[0].shape[1])
-
         # calculate the token size
-        dummy_sample = self.vision_model(pixel_values=torch.rand(2, 3, image_size, image_size)) 
+        dummy_sample = self.vision_model(torch.rand(2, 3, input_size, input_size)) 
         img_token_length = dummy_sample.last_hidden_state.shape[1] - 1
         text_token_length = 1
         # learnable positional embedding
         self.position_embedding = nn.Embedding(
             img_token_length + text_token_length, 512)
         # decoder
-        self.decoder = build_decoder(int(math.sqrt(img_token_length)), int(image_size))
+        self.decoder = build_decoder(int(math.sqrt(img_token_length)), input_size)
 
     def freeze_clip(self):
         for param in self.vision_model.parameters():
@@ -208,35 +169,15 @@ class StyTrans(nn.Module):
                - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
 
         """
-        if self.training == True:
-            # training mode
-            # input are preprocessed dictionary
-            image_tokens = content['last_hidden_state']
-            style_tokens = style['average_pooling']
-        else:
-            # eval mode
-            # the input is raw image and text
-            img = self.image_processor(content)
-            img['pixel_values'] = torch.tensor(img['pixel_values'])
-            image_tokens = self.vision_model(**img)
-            image_tokens = image_tokens.last_hidden_state[:, 1:, :]
+        image_tokens = self.vision_model(content)
+        image_tokens = image_tokens.last_hidden_state[:, 1:, :] # get ride of cls token
 
-            template_text = [self.compose_text_with_templates(text, imagenet_templates) for text in style]
-            style_tokens = []
-            for text in template_text:
-                text_tokens =  self.tokenizer(text, padding=True, return_tensors="pt")
-                outputs = self.text_model(**text_tokens)
-                last_hidden_state = outputs['last_hidden_state']
-                #cls_token = outputs['pooler_output']
-                style_tokens.append(torch.mean(last_hidden_state, dim=(0,1)))
-
-            # project content and feats to the same dim
-            image_tokens = self.fc_vision(image_tokens)
-            style_tokens = self.fc_text(style_tokens)
-
-        # project content and feats to the same dim
+        style_tokens = style['average_pooling'] # using average pooling token for now
+            
+        # project image and style tokens
         image_tokens = self.fc_vision(image_tokens)
         style_tokens = self.fc_text(style_tokens)
+
         # combine content and style
         input = torch.cat((image_tokens, style_tokens[:, None, :]), dim=1) 
 

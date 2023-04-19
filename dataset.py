@@ -2,9 +2,11 @@ import torch.utils.data as data
 from pathlib import Path
 import os
 import torch
+import numpy as np
 import torchvision
 from PIL import Image
-from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel, CLIPVisionModelWithProjection
+import clip
+from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
 from template import imagenet_templates
 
 class FlatFolderDataset(data.Dataset):
@@ -31,39 +33,34 @@ class FlatFolderDataset(data.Dataset):
     def name(self):
         return 'FlatFolderDataset'
 
-# def collate_fn_image(batch):
-#     preprocessor = CLIPImageProcessor()
-#     batch = preprocessor(batch)
-#     model = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32")
-#     batch = model.encode_image(**batch)
-#     return batch
-
 class ImageTokenDataset(data.Dataset):
     '''
     Dataset that uses clip image encoder to encode image into tokens
     '''
-    def __init__(self, image_dir: Path, clip_model: str = "openai/clip-vit-base-patch32"):
+    def __init__(self,
+                image_dir: Path,
+                clip_model: str = "openai/clip-vit-base-patch32",
+                device='cpu',
+                source_transform=None):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
         self.image_encoder = CLIPVisionModel.from_pretrained(clip_model)
         self.image_embedding = dict()
+        self.device = device
+        self.source_transform = source_transform
 
         self.images = [f for f in self.image_dir.glob('*')]
 
     def __getitem__(self, index):
-        # use preprocessor to break image into patches
-        # and use vision model to encode patches into tokens
-        # TODO Move this part to model 
-        img = torchvision.io.read_image(str(self.images[index]))
-        img = self.image_processor(img)
-        img['pixel_values'] = torch.tensor(img['pixel_values'])
-
-        tokens = self.image_encoder(**img)
-        return {
-            'pixel_values': img.pixel_values.squeeze(0),
-            'last_hidden_state': tokens.last_hidden_state.squeeze(0)[1:, :]
-        }
+        '''
+        Return processed images
+        One is preprocessed by CLIPImageProcessor, one is by source transform
+        ''' 
+        img = self.image_processor(torchvision.io.read_image(str(self.images[index])))
+        img = torch.tensor(np.array(img['pixel_values'])).squeeze(0).to(self.device)
+        source_img = self.source_transform(Image.open(self.images[index])).to(self.device)
+        return img, source_img
 
     def __len__(self):
         return len(self.images)
@@ -73,7 +70,7 @@ class RandomTextDataset(data.Dataset):
     '''
     Dataset that returns random text descript for style transfer
     '''
-    def __init__(self, text=['fire', 'pencil', 'water'], prompt_engineering=True, clip_model: str = "openai/clip-vit-base-patch32"):
+    def __init__(self, text=['fire', 'pencil', 'water'], prompt_engineering=True, clip_model: str = "openai/clip-vit-base-patch32", device='cpu'):
         super(RandomTextDataset, self).__init__()
         self.text = text
         self.prompt_engineering = prompt_engineering
@@ -81,7 +78,8 @@ class RandomTextDataset(data.Dataset):
         self.text_encoder = CLIPTextModel.from_pretrained(clip_model)
         self.text_embedding = dict() # storing the 3 kinds of text embedding for each text
         self.index_to_text = dict()
-
+        self.device = device
+        
         self.preprocess_text(text)
     
     def compose_text_with_templates(self, text: str, templates=imagenet_templates) -> list:
@@ -112,7 +110,8 @@ class RandomTextDataset(data.Dataset):
             self.text_embedding[style_description] = embedding_dict
     
     def __getitem__(self, index):
-        return self.text_embedding[self.index_to_text[index]]
+        return_dict = self.text_embedding[self.index_to_text[index]]
+        return {key: value.to(self.device) for key, value in return_dict.items()}
     
     def __len__(self):
         return len(self.text_embedding)
@@ -161,5 +160,5 @@ def test_image_encoder():
 
 #test_text_encoder()
 #test_text_loader()
-test_image_encoder()
+#test_image_encoder()
 #test_image_loader()
