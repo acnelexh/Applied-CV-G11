@@ -25,11 +25,13 @@ class VGGNormalizer():
     def __call__(self, x):
         return self.transform((x-self.mean)/self.std)
 
-def encode_img(image, image_processor, image_encoder):
-    image = image_processor(image)
-    image['pixel_values'] = torch.tensor(image['pixel_values']) #?
-    image = image_encoder(**image)
-    return image.last_hidden_state.squeeze(0)[1:,:] # (196,768)
+def encode_img(images, device='cpu'):
+    '''use clip api to encode image into 512-dim vector'''
+    model, _ = clip.load("ViT-B/32", device=device)
+    preprocess = CLIPImageProcessor(device=device) # turns out to be exactly the same as the one in clip
+    image = preprocess(images)
+    image_features = model.encode_image(torch.tensor(image['pixel_values']).to(device))
+    return image_features
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
@@ -170,7 +172,7 @@ augment = transforms.Compose([
 ])
 
 num_crops = args.num_crops # TODO: add args
-image_processor = CLIPImageProcessor()
+image_processor = CLIPImageProcessor(device=args.device)
 image_encoder = CLIPVisionModel.from_pretrained(args.clip_model)
 source_features = None #TODO: raw images, not embedding
 
@@ -218,11 +220,11 @@ for i in tqdm(range(args.max_iter)):
     
     # patch loss  
     # content_images['last_hidden_state'][0].shape is 196x768
-    crop_features = [(img_aug[i], image_processor, image_encoder) for i in range(len(img_aug))]
+    crop_features = encode_img(img_aug, device=args.device)
     img_aug_features = []
     # TODO: unfinished
     for i in range(args.batch_size):
-        crop_cat = torch.zeros(crop_features[0].shape)
+        crop_cat = torch.zeros(crop_features[0].shape, device=args.device)
         for j in range(args.num_crops):
             crop_cat += crop_features[i * num_crops + j]
         img_aug_features.append(crop_cat)
