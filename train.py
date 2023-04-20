@@ -22,16 +22,22 @@ class VGGNormalizer():
         self.transform = transforms.Compose(
             [transforms.Resize(size=(224, 224))])
     
-    def __call__(self, x):
+    def __call__(self, x) -> torch.Tensor:
         return self.transform((x-self.mean)/self.std)
     
-def encode_img(images, device='cpu'):
-    '''use clip api to encode image into 512-dim vector'''
-    model, _ = clip.load("ViT-B/32", device=device)
-    preprocess = CLIPImageProcessor(device=device) # turns out to be exactly the same as the one in clip
-    image = preprocess(images)
-    image_features = model.encode_image(torch.tensor(image['pixel_values']).to(device))
-    return image_features
+class CLIPEncoder():
+    def __init__(self, device='cpu', clip_model="ViT-B/32"):
+        self.model, _ = clip.load(clip_model, device=device)
+        self.preprocessor = CLIPImageProcessor(device=device)
+        self.device = device
+    
+    def __call__(self, x, preprocess=True) -> torch.Tensor:
+        if preprocess:
+            image = self.preprocessor(x)
+            image_features = self.model.encode_image(torch.tensor(image['pixel_values']).to(device))
+        else:
+            image_features = self.model.encode_image(x)
+        return image_features
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
@@ -91,7 +97,7 @@ parser.add_argument('--n_threads', type=int, default=0)
 parser.add_argument('--thresh', type=float, default=0.7)
 parser.add_argument('--crop_size', type=int, default=128)
 parser.add_argument('--num_crops', type=int, default=4)
-parser.add_argument('--device', type=str, default='cuda:0')
+parser.add_argument('--device', type=str, default='cpu')
 args = parser.parse_args()
 
 
@@ -170,7 +176,7 @@ num_crops = args.num_crops # TODO: add args
 image_processor = CLIPImageProcessor(device=args.device)
 image_encoder = CLIPVisionModel.from_pretrained(args.clip_model)
 source_features = None #TODO: raw images, not embedding
-
+clip_encoder = CLIPEncoder(device=args.device)
 for iteration in tqdm(range(args.max_iter)):
     #warm up
     if iteration < 1e4:
@@ -187,14 +193,14 @@ for iteration in tqdm(range(args.max_iter)):
     
     content_loss = get_content_loss(vgg_images, targets, device=args.device)
     
-    img_direction = get_img_direction(clip_images, targets, args, patch=True)
+    img_direction = get_img_direction(clip_images, targets, args, clip_encoder, patch=True)
     text_direction = get_text_direction(style_texts, source_texts)
     
     # patch loss 
     patch_loss = get_patch_loss(img_direction, text_direction, args)
 
     # global loss
-    img_direction = get_img_direction(clip_images, targets, args, patch=False)
+    img_direction = get_img_direction(clip_images, targets, args, clip_encoder, patch=False)
     glob_loss = get_glob_loss(img_direction, text_direction)
 
     #var_loss = get_image_prior_losses(targets) # total variation loss, should loop
