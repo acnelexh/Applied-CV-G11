@@ -137,7 +137,7 @@ style_dataset = RandomTextDataset(
     device=args.device) #TODO: try multiple styles?
 
 # probably shouldn't do this if not necessary, wasting mem
-source = ["a photo"] * len(args.style_texts)
+source = ["a photo"]
 source_dataset = RandomTextDataset(
     source,
     clip_model=args.clip_model,
