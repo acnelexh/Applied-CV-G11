@@ -69,7 +69,6 @@ parser.add_argument('--content_dir', default='./input_content/', type=Path,
                     help='Directory path to a batch of content images')
 parser.add_argument('--style_texts', type=list[str], default=['fire','water'],
                     help='List of style texts')
-parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')  #run the train.py, please download the pretrained vgg checkpoint
 
 # training options TODO: modify options
 parser.add_argument('--save_dir', default='./experiments',
@@ -81,7 +80,6 @@ parser.add_argument('--lr_decay', type=float, default=1e-5)
 parser.add_argument('--max_iter', type=int, default=160000)
 parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--style_weight', type=float, default=10.0)
-parser.add_argument('--content_weight', type=float, default=7.0)
 parser.add_argument('--save_model_interval', type=int, default=10000)
 parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
@@ -89,15 +87,15 @@ parser.add_argument('--hidden_dim', default=512, type=int,
                         help="Size of the embeddings (dimension of the transformer)")
 parser.add_argument('--clip-model', type=str, default='openai/clip-vit-base-patch16',
                         help="CLIP model to use for the encoder")
-parser.add_argument('--lambda_tv', type=float, default=2e-3)
-parser.add_argument('--lambda_patch', type=float, default=9000)
-parser.add_argument('--lambda_dir', type=float, default=500)
-parser.add_argument('--lambda_c', type=float, default=150)
+parser.add_argument('--lambda_tv', type=float, default=2e-3, help="lambda for variation loss")
+parser.add_argument('--lambda_patch', type=float, default=9000, help="lambda for patch loss")
+parser.add_argument('--lambda_dir', type=float, default=500, help="lambda for global loss")
+parser.add_argument('--lambda_c', type=float, default=150, help="lambda for content loss")
 parser.add_argument('--n_threads', type=int, default=0)
-parser.add_argument('--thresh', type=float, default=0.7)
+parser.add_argument('--thresh', type=float, default=0.7, help="threshold for patch loss")
 parser.add_argument('--crop_size', type=int, default=128)
 parser.add_argument('--num_crops', type=int, default=4)
-parser.add_argument('--device', type=str, default='cpu')
+#parser.add_argument('--device', type=str, default='cpu')
 args = parser.parse_args()
 
 
@@ -209,7 +207,7 @@ for iteration in tqdm(range(args.max_iter)):
         img = i.unsqueeze(0)
         var_loss += get_image_prior_losses(img)
 
-    total_loss = args.lambda_patch * patch_loss + args.content_weight * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
+    total_loss = args.lambda_patch * patch_loss + args.lambda_c * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
     total_loss_epoch.append(total_loss)
     optimizer.zero_grad()
     total_loss.backward()
