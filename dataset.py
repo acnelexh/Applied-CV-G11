@@ -1,25 +1,33 @@
-import torch.utils.data as data
-from pathlib import Path
 import torch
-import numpy as np
 import torchvision
-import clip
+import numpy as np
+from pathlib import Path
+import torch.utils.data as data
 from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
 from template import imagenet_templates
 
+class VGGNormalizer():
+    def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+        self.mean = torch.tensor(mean).view(1,-1,1,1).to(device)
+        self.std = torch.tensor(std).view(1,-1,1,1).to(device)
+        self.transform = torchvision.transforms.Compose(
+            [torchvision.transforms.Resize(size=(224, 224))])
+    
+    def __call__(self, x) -> torch.Tensor:
+        return self.transform((x-self.mean)/self.std)
+    
 class ImageTokenDataset(data.Dataset):
     '''
     Dataset that uses clip image encoder to encode image into tokens
     '''
     def __init__(self,
                 image_dir: Path,
-                device='cpu',
-                vgg_transform=None):
+                device='cpu'):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
         self.device = device
-        self.vgg_transform = vgg_transform
+        self.vgg_transform = VGGNormalizer(device=device)
 
         self.images = [f for f in self.image_dir.glob('*')]
 

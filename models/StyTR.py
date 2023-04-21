@@ -1,33 +1,12 @@
-import torch
-import torch.nn.functional as F
-from torch import nn
-from models.transformer import TransformerEncoder, TransformerEncoderLayer
-from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
-from template import imagenet_templates
 import math
-from models.ViT_helper import DropPath, to_2tuple, trunc_normal_
+import torch
+from torch import nn
+import torch.nn.functional as F
 from models.unet import TokenDecoder
+from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel
+from models.transformer import TransformerEncoder, TransformerEncoderLayer
 
-class PatchEmbed(nn.Module):
-    """ Image to Patch Embedding
-    """
-    def __init__(self, img_size=256, patch_size=8, in_chans=3, embed_dim=512):
-        super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.num_patches = num_patches
-        
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
-        self.up1 = nn.Upsample(scale_factor=2, mode='nearest')
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        x = self.proj(x)
-
-        return x
+from template import imagenet_templates
 
 def build_decoder(input_dimension, target_dimension):
     """

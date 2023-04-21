@@ -1,12 +1,8 @@
-from torchvision import models, transforms
-import torch
 import clip
+import torch
+from torchvision import transforms
 from transformers import CLIPImageProcessor
 from util.clip_utils import get_features
-
-# device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# vgg = models.vgg19(pretrained=True).features
-# vgg.to(device)
 
 class VGGNormalizer():
     def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
@@ -17,23 +13,7 @@ class VGGNormalizer():
     
     def __call__(self, x):
         return self.transform((x-self.mean)/self.std)
-
-
-# class CLIPEncoder():
-#     def __init__(self, device='cpu', clip_model="Vit-B/32"):
-#         self.model, _ = clip.load(clip_model, device=device)
-#         self.preprocess = CLIPImageProcessor(device=device)
-#         self.device = device
     
-#     def __call__(self, x, preprocess=True) -> torch.Tensor:
-#         if preprocess:
-#             image = self.preprocessor(x)
-#             image_features = self.model.encode_image(torch.tensor(image['pixel_values']).to(device))
-#         else:
-#             image_features = self.model.encode_image(x)
-#         return image_features
-    
-
 def get_content_loss(input_image, output_image, vgg, device='cuda'):
     '''
     Calculate content loss

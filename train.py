@@ -1,44 +1,16 @@
-import argparse
 import os
-import torch
 import clip
-import torch.utils.data as data
-from tensorboardX import SummaryWriter
-from torchvision import transforms, models
+import torch
+import argparse
 from tqdm import tqdm
 from pathlib import Path
 import models.StyTR  as StyTR 
+import torch.utils.data as data
+from torchvision import  models
+from tensorboardX import SummaryWriter
 from sampler import InfiniteSamplerWrapper
 from dataset import ImageTokenDataset, RandomTextDataset
 from loss import get_content_loss, get_img_direction, get_text_direction, get_patch_loss, get_glob_loss
-
-
-class VGGNormalizer():
-    def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
-        self.mean = torch.tensor(mean).view(1,-1,1,1).to(device)
-        self.std = torch.tensor(std).view(1,-1,1,1).to(device)
-        self.transform = transforms.Compose(
-            [transforms.Resize(size=(224, 224))])
-    
-    def __call__(self, x) -> torch.Tensor:
-        return self.transform((x-self.mean)/self.std)
-<<<<<<< HEAD
-=======
-    
-class CLIPEncoder():
-    def __init__(self, device='cpu', clip_model="ViT-B/32"):
-        self.model, _ = clip.load(clip_model, device=device)
-        self.preprocessor = CLIPImageProcessor(device=device)
-        self.device = device
-    
-    def __call__(self, x, preprocess=True) -> torch.Tensor:
-        if preprocess:
-            image = self.preprocessor(x)
-            image_features = self.model.encode_image(torch.tensor(image['pixel_values']).to(device))
-        else:
-            image_features = self.model.encode_image(x)
-        return image_features
->>>>>>> 35576377a2a358e0774c6caebc42840986788e83
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
@@ -92,8 +64,7 @@ def main(args):
     
     content_dataset = ImageTokenDataset(
         args.content_dir,
-        device=args.device,
-        vgg_transform=VGGNormalizer(args.device))
+        device=args.device)
     
     style_dataset = RandomTextDataset(args.style_texts) #TODO: try multiple styles?
 
@@ -159,9 +130,8 @@ def main(args):
             var_loss += get_image_prior_losses(img)
 
         total_loss = args.lambda_patch * patch_loss + args.content_weight * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
-        total_loss_epoch.append(total_loss)
+        total_loss_epoch.append(total_loss.item())
         optimizer.zero_grad()
-        torch.autograd.set_detect_anomaly(True)
         total_loss.backward()
         optimizer.step()
         ####
