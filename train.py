@@ -20,8 +20,25 @@ class VGGNormalizer():
         self.transform = transforms.Compose(
             [transforms.Resize(size=(224, 224))])
     
-    def __call__(self, x):
+    def __call__(self, x) -> torch.Tensor:
         return self.transform((x-self.mean)/self.std)
+<<<<<<< HEAD
+=======
+    
+class CLIPEncoder():
+    def __init__(self, device='cpu', clip_model="ViT-B/32"):
+        self.model, _ = clip.load(clip_model, device=device)
+        self.preprocessor = CLIPImageProcessor(device=device)
+        self.device = device
+    
+    def __call__(self, x, preprocess=True) -> torch.Tensor:
+        if preprocess:
+            image = self.preprocessor(x)
+            image_features = self.model.encode_image(torch.tensor(image['pixel_values']).to(device))
+        else:
+            image_features = self.model.encode_image(x)
+        return image_features
+>>>>>>> 35576377a2a358e0774c6caebc42840986788e83
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]

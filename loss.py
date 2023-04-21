@@ -17,6 +17,21 @@ class VGGNormalizer():
     
     def __call__(self, x):
         return self.transform((x-self.mean)/self.std)
+
+
+# class CLIPEncoder():
+#     def __init__(self, device='cpu', clip_model="Vit-B/32"):
+#         self.model, _ = clip.load(clip_model, device=device)
+#         self.preprocess = CLIPImageProcessor(device=device)
+#         self.device = device
+    
+#     def __call__(self, x, preprocess=True) -> torch.Tensor:
+#         if preprocess:
+#             image = self.preprocessor(x)
+#             image_features = self.model.encode_image(torch.tensor(image['pixel_values']).to(device))
+#         else:
+#             image_features = self.model.encode_image(x)
+#         return image_features
     
 
 def get_content_loss(input_image, output_image, vgg, device='cuda'):
