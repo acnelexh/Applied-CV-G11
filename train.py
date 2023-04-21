@@ -126,20 +126,20 @@ _, preprocess = clip.load("ViT-B/32", device=device)
 content_dataset = ImageTokenDataset(
     args.content_dir,
     clip_model=args.clip_model,
-    device=args.device,
+    device=device,
     clip_transform=preprocess,
-    vgg_transform=VGGNormalizer(args.device))    
+    vgg_transform=VGGNormalizer(device))    
 style_dataset = RandomTextDataset(
     args.style_texts,
     clip_model=args.clip_model,
-    device=args.device) #TODO: try multiple styles?
+    device=device) #TODO: try multiple styles?
 
 # probably shouldn't do this if not necessary, wasting mem
 source = ["a photo"]
 source_dataset = RandomTextDataset(
     source,
     clip_model=args.clip_model,
-    device=args.device)
+    device=device)
 
 # returns image embedding (source_features)
 content_iter = iter(data.DataLoader(
@@ -171,10 +171,10 @@ style_loss_epoch = []
 total_loss_epoch = []
 
 num_crops = args.num_crops # TODO: add args
-image_processor = CLIPImageProcessor(device=args.device)
+image_processor = CLIPImageProcessor(device=device)
 image_encoder = CLIPVisionModel.from_pretrained(args.clip_model)
 source_features = None #TODO: raw images, not embedding
-clip_encoder = CLIPEncoder(device=args.device)
+clip_encoder = CLIPEncoder(device=device)
 for iteration in tqdm(range(args.max_iter)):
     #warm up
     if iteration < 1e4:
@@ -189,7 +189,7 @@ for iteration in tqdm(range(args.max_iter)):
     
     targets = network(content_images, style_texts)
     
-    content_loss = get_content_loss(vgg_images, targets, device=args.device)
+    content_loss = get_content_loss(vgg_images, targets, device=device)
     
     img_direction = get_img_direction(clip_images, targets, args, clip_encoder, patch=True)
     text_direction = get_text_direction(style_texts, source_texts)
