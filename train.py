@@ -44,7 +44,7 @@ def main(args):
     writer = SummaryWriter(log_dir=args.log_dir)
     
     
-    network = StyTR.StyTrans(args.clip_model)
+    network = StyTR.StyTrans(args)
     network.to(args.device)
     network.train()
     vgg = models.vgg19(pretrained=True).features
@@ -170,11 +170,15 @@ if __name__ == '__main__':
                         help='List of style texts')
     parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')  #run the train.py, please download the pretrained vgg checkpoint
 
-    # training options TODO: modify options
+    # Training options 
     parser.add_argument('--save_dir', default='./experiments',
                         help='Directory to save the model')
     parser.add_argument('--log_dir', default='./logs',
                         help='Directory to save the log')
+    parser.add_argument('--device', type=str, default='cuda:0')
+    
+    
+    # Training parameters
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--lr_decay', type=float, default=1e-5)
     parser.add_argument('--max_iter', type=int, default=160000)
@@ -186,8 +190,11 @@ if __name__ == '__main__':
                             help="Type of positional embedding to use on top of the image features")
     parser.add_argument('--hidden_dim', default=512, type=int,
                             help="Size of the embeddings (dimension of the transformer)")
-    parser.add_argument('--clip-model', type=str, default='openai/clip-vit-base-patch16',
+    parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch16',
                             help="CLIP model to use for the encoder")
+    
+    
+    # Loss parameters
     parser.add_argument('--lambda_tv', type=float, default=2e-3)
     parser.add_argument('--lambda_patch', type=float, default=9000)
     parser.add_argument('--lambda_dir', type=float, default=500)
@@ -196,6 +203,21 @@ if __name__ == '__main__':
     parser.add_argument('--thresh', type=float, default=0.7)
     parser.add_argument('--crop_size', type=int, default=128)
     parser.add_argument('--num_crops', type=int, default=4)
-    parser.add_argument('--device', type=str, default='cuda:0')
+    
+    
+    # StyTR basic options
+    parser.add_argument('--prompt_engineering', type=bool, default=True,
+                        help='whether to use prompt engineering')
+    parser.add_argument('--input_size', type=int, default=224,
+                        help='input image size')
+    
+    # StyTR Encoder options
+    parser.add_argument('--encoder_embed_dim', type=int, default=512)
+    parser.add_argument('--encoder_ffn_dim', type=int, default=2048)
+    parser.add_argument('--encoder_depth', type=int, default=6)
+    parser.add_argument('--encoder_heads', type=int, default=8)
+    parser.add_argument('--encoder_dropout', type=float, default=0.1)
+    parser.add_argument('--encoder_activation', type=str, default='relu')
+    parser.add_argument('--encoder_normalize_before', type=bool, default=True)
     args = parser.parse_args()
     main(args)

@@ -5,71 +5,40 @@ import torch.nn.functional as F
 from models.unet import TokenDecoder
 from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel
 from models.transformer import TransformerEncoder, TransformerEncoderLayer
-
 from template import imagenet_templates
-
-def build_decoder(input_dimension, target_dimension):
-    """
-    Built decoder automatically depending on the input size
-    Upsampling the input image Nx times
-    """
-    # assert target dimension is a multiple of input dimension
-    assert(isinstance(input_dimension, int))
-    assert(isinstance(target_dimension, int))
-    assert(math.log2(target_dimension/input_dimension) == int(math.log2(target_dimension/input_dimension)))
-    # calcualt the number of upsmampling needed
-    num_upsample = int(math.log2(target_dimension/input_dimension))
-    decoder = TokenDecoder(num_upsample, input_hidden_dim=512)
-
-    dummy = torch.rand(1, 512, int(input_dimension), int(input_dimension))
-    out = decoder(dummy)
-    assert out.shape == (1, 3, target_dimension, target_dimension)
-    return decoder
-
-class MLP(nn.Module):
-    """ Very simple multi-layer perceptron (also called FFN)"""
-
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
-        super().__init__()
-        self.num_layers = num_layers
-        h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
-
-    def forward(self, x):
-        for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-        return x
 
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
-    
-    def __init__(self,
-                vit_pretrain_path = "openai/clip-vit-base-patch32",
-                input_size=224,
-                prompt_engineering=True):
+    def __init__(self, args):
 
         super().__init__()
 
         self.mse_loss = nn.MSELoss()
 
         #clip stuff
-        self.vision_model = CLIPVisionModel.from_pretrained(vit_pretrain_path)
-        self.text_model = CLIPTextModel.from_pretrained(vit_pretrain_path)
+        self.vision_model = CLIPVisionModel.from_pretrained(args.clip_model)
+        self.text_model = CLIPTextModel.from_pretrained(args.clip_model)
         #self.image_processor = CLIPImageProcessor()
-        self.tokenizer = AutoTokenizer.from_pretrained(vit_pretrain_path)
-        self.prompt_engineering = prompt_engineering
+        self.tokenizer = AutoTokenizer.from_pretrained(args.clip_model)
+        self.prompt_engineering = args.prompt_engineering
         self.freeze_clip()
         self.style_cache = dict() # cache the style tokens
 
         # build a solely encoder transformer
         # to encode vision and text
-        encoder_layer = TransformerEncoderLayer(512, 8, 2048, 0.1, 'relu', True)
-        self.encoder = TransformerEncoder(encoder_layer, 6)
+        encoder_layer = TransformerEncoderLayer(args.encoder_embed_dim,
+                                                args.encoder_heads,
+                                                args.encoder_ffn_dim,
+                                                args.encoder_dropout,
+                                                args.encoder_activation,
+                                                args.encoder_normalize_before)
+        self.encoder = TransformerEncoder(encoder_layer, args.encoder_depth)
         
         # projection layers for clip tokens
         self.fc_vision = nn.Linear(768, 512)
         self.fc_text = nn.Linear(512, 512)
 
+        input_size = args.input_size
         # calculate the token size
         dummy_sample = self.vision_model(torch.rand(2, 3, input_size, input_size)) 
         img_token_length = dummy_sample.last_hidden_state.shape[1] - 1
@@ -105,7 +74,7 @@ class StyTrans(nn.Module):
         image_tokens = self.vision_model(content)
         image_tokens = image_tokens.last_hidden_state[:, 1:, :] # get ride of cls token
         
-        # cache the style tokens, recheck for gradient
+        # cache the style tokens, TODO recheck for gradient
         style_tokens = []
         for batch in style:
             if batch in self.style_cache:
@@ -137,6 +106,25 @@ class StyTrans(nn.Module):
         output = self.decoder(image_features)
         return output
 
+
+# Testing ground
+def build_decoder(input_dimension, target_dimension):
+    """
+    Built decoder automatically depending on the input size
+    Upsampling the input image Nx times
+    """
+    # assert target dimension is a multiple of input dimension
+    assert(isinstance(input_dimension, int))
+    assert(isinstance(target_dimension, int))
+    assert(math.log2(target_dimension/input_dimension) == int(math.log2(target_dimension/input_dimension)))
+    # calcualt the number of upsmampling needed
+    num_upsample = int(math.log2(target_dimension/input_dimension))
+    decoder = TokenDecoder(num_upsample, input_hidden_dim=512)
+
+    dummy = torch.rand(1, 512, int(input_dimension), int(input_dimension))
+    out = decoder(dummy)
+    assert out.shape == (1, 3, target_dimension, target_dimension)
+    return decoder
 
 def test_model():
     build_decoder(14, 224)
