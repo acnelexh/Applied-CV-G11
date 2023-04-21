@@ -1,37 +1,11 @@
 import torch.utils.data as data
 from pathlib import Path
-import os
 import torch
 import numpy as np
 import torchvision
-from PIL import Image
 import clip
 from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
 from template import imagenet_templates
-
-class FlatFolderDataset(data.Dataset):
-    def __init__(self, root, transform):
-        super(FlatFolderDataset, self).__init__()
-        self.root = root
-        print(self.root)
-        self.path = os.listdir(self.root)
-        if os.path.isdir(os.path.join(self.root,self.path[0])):
-            self.paths = []
-            for file_name in os.listdir(self.root):
-                for file_name1 in os.listdir(os.path.join(self.root,file_name)):
-                    self.paths.append(self.root+"/"+file_name+"/"+file_name1)             
-        else:
-            self.paths = list(Path(self.root).glob('*'))
-        self.transform = transform
-    def __getitem__(self, index):
-        path = self.paths[index]
-        img = Image.open(str(path)).convert('RGB')
-        img = self.transform(img)
-        return img
-    def __len__(self):
-        return len(self.paths)
-    def name(self):
-        return 'FlatFolderDataset'
 
 class ImageTokenDataset(data.Dataset):
     '''
@@ -39,15 +13,12 @@ class ImageTokenDataset(data.Dataset):
     '''
     def __init__(self,
                 image_dir: Path,
-                clip_model: str = "openai/clip-vit-base-patch32",
                 device='cpu',
-                clip_transform=None,
                 vgg_transform=None):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
         self.device = device
-        self.clip_transform = clip_transform
         self.vgg_transform = vgg_transform
 
         self.images = [f for f in self.image_dir.glob('*')]
@@ -61,10 +32,9 @@ class ImageTokenDataset(data.Dataset):
         img = self.image_processor(raw_img)
         img = torch.tensor(np.array(img['pixel_values'])).squeeze(0).to(self.device)
         #source_img = torchvision.io.read_image(str(self.images[index]))
-        clip_img = self.clip_transform(Image.open(self.images[index])).to(self.device)
         vgg_img = self.vgg_transform(raw_img).squeeze(0)
         # for model, pathloss, vgg content loss
-        return img, clip_img, vgg_img
+        return img, vgg_img
 
     def __len__(self):
         return len(self.images)
@@ -74,51 +44,17 @@ class RandomTextDataset(data.Dataset):
     '''
     Dataset that returns random text descript for style transfer
     '''
-    def __init__(self, text=['fire', 'pencil', 'water'], prompt_engineering=True, clip_model: str = "openai/clip-vit-base-patch32", device='cpu'):
+    def __init__(self, text=['fire', 'pencil', 'water']):
         super(RandomTextDataset, self).__init__()
         self.text = text
-        self.prompt_engineering = prompt_engineering
-        self.tokenizer = AutoTokenizer.from_pretrained(clip_model)
-        self.text_encoder = CLIPTextModel.from_pretrained(clip_model)
-        self.text_embedding = dict() # storing the 3 kinds of text embedding for each text
-        self.index_to_text = dict()
-        self.device = device
         
-        self.preprocess_text(text)
-    
-    def compose_text_with_templates(self, text: str, templates=imagenet_templates) -> list:
-        return [template.format(text) for template in templates]
-
-    def preprocess_text(self, text: list[str]) -> dict:
-        for idx, style_description in enumerate(text):
-            self.index_to_text[idx] = style_description
-            if not self.prompt_engineering:
-                template_text = ["a photo of " + text]
-            else:
-                template_text = self.compose_text_with_templates(style_description, imagenet_templates)
-                embedding_dict = dict()
-                with torch.no_grad():
-                    inputs = self.tokenizer(template_text, padding=True, return_tensors="pt")
-                    outputs = self.text_encoder(**inputs)
-                    last_hidden_state = outputs['last_hidden_state']
-                    cls_token = outputs['pooler_output']
-                    # couples option, one is use cls token for encoder
-                    # the other one is use average pooling over hidden state
-                    # we are gonna do all of them!
-                    # option 1 cls token
-                    embedding_dict['cls_token'] = torch.mean(cls_token, dim=0)
-                    # option 2 global average pooling
-                    embedding_dict['average_pooling'] = torch.mean(last_hidden_state, dim=(0,1))
-                    # option 3 global average pooling, one for each prompt
-                    embedding_dict['average_pooling_per_prompt'] = torch.mean(last_hidden_state, dim=1)
-            self.text_embedding[style_description] = embedding_dict
-    
     def __getitem__(self, index):
-        return_dict = self.text_embedding[self.index_to_text[index]]
-        return {key: value.to(self.device) for key, value in return_dict.items()}
+        return self.text[index]
     
     def __len__(self):
-        return len(self.text_embedding)
+        return len(self.text)
+
+# Testing ground
 
 def test_text_encoder():
     "https://discuss.huggingface.co/t/last-hidden-state-vs-pooler-output-in-clipvisionmodel/26281"

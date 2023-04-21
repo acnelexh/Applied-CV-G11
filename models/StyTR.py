@@ -29,64 +29,6 @@ class PatchEmbed(nn.Module):
 
         return x
 
-vgg = nn.Sequential(
-    nn.Conv2d(3, 3, (1, 1)),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(3, 64, (3, 3)),
-    nn.ReLU(),  # relu1-1
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(64, 64, (3, 3)),
-    nn.ReLU(),  # relu1-2
-    nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(64, 128, (3, 3)),
-    nn.ReLU(),  # relu2-1
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(128, 128, (3, 3)),
-    nn.ReLU(),  # relu2-2
-    nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(128, 256, (3, 3)),
-    nn.ReLU(),  # relu3-1
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),  # relu3-2
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),  # relu3-3
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 256, (3, 3)),
-    nn.ReLU(),  # relu3-4
-    nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(256, 512, (3, 3)),
-    nn.ReLU(),  # relu4-1, this is the last layer used
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu4-2
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu4-3
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu4-4
-    nn.MaxPool2d((2, 2), (2, 2), (0, 0), ceil_mode=True),
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu5-1
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu5-2
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU(),  # relu5-3
-    nn.ReflectionPad2d((1, 1, 1, 1)),
-    nn.Conv2d(512, 512, (3, 3)),
-    nn.ReLU()  # relu5-4
-)
-
-
-
 def build_decoder(input_dimension, target_dimension):
     """
     Built decoder automatically depending on the input size
@@ -122,7 +64,10 @@ class MLP(nn.Module):
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     
-    def __init__(self, vit_pretrain_path = "openai/clip-vit-base-patch32", input_size=224):
+    def __init__(self,
+                vit_pretrain_path = "openai/clip-vit-base-patch32",
+                input_size=224,
+                prompt_engineering=True):
 
         super().__init__()
 
@@ -133,7 +78,9 @@ class StyTrans(nn.Module):
         self.text_model = CLIPTextModel.from_pretrained(vit_pretrain_path)
         #self.image_processor = CLIPImageProcessor()
         self.tokenizer = AutoTokenizer.from_pretrained(vit_pretrain_path)
+        self.prompt_engineering = prompt_engineering
         self.freeze_clip()
+        self.style_cache = dict() # cache the style tokens
 
         # build a solely encoder transformer
         # to encode vision and text
@@ -159,21 +106,40 @@ class StyTrans(nn.Module):
             param.requires_grad = False
         for param in self.text_model.parameters():
             param.requires_grad = False
-
+    
     def compose_text_with_templates(self, text: str, templates=imagenet_templates) -> list:
         return [template.format(text) for template in templates]
     
-    def forward(self, content, style):
-        """ The forward expects a NestedTensor, which consists of:
-               - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
-               - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
+    def process_style(self, style):
+        if not self.prompt_engineering:
+            template_text = ["a photo of " + style]
+        else:
+            template_text = self.compose_text_with_templates(style, imagenet_templates)
+        return self.tokenizer(template_text, padding=True, return_tensors="pt").to(self.text_model.device)
 
+        
+    def forward(self, content, style):
+        """  
+        Content: image tensor
+        Style: description of style
         """
         image_tokens = self.vision_model(content)
         image_tokens = image_tokens.last_hidden_state[:, 1:, :] # get ride of cls token
-
-        style_tokens = style['average_pooling'] # using average pooling token for now
-            
+        
+        # cache the style tokens, recheck for gradient
+        style_tokens = []
+        for batch in style:
+            if batch in self.style_cache:
+                style_tokens.append(self.style_cache[batch])
+            else:
+                tmp = self.process_style(batch)
+                tmp = self.text_model(**tmp)
+                style_tokens.append(tmp.last_hidden_state.mean(dim=(0,1))) # average pooling
+                # cache the style tokens and turn off gradient
+                self.style_cache[batch] = style_tokens[-1]
+                self.style_cache[batch].requires_grad = False
+        style_tokens = torch.stack(style_tokens, dim=0)
+        
         # project image and style tokens
         image_tokens = self.fc_vision(image_tokens)
         style_tokens = self.fc_text(style_tokens)

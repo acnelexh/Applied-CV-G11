@@ -4,10 +4,9 @@ import clip
 from transformers import CLIPImageProcessor
 from util.clip_utils import get_features
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-vgg = models.vgg19(pretrained=True).features
-vgg.to(device)
-
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# vgg = models.vgg19(pretrained=True).features
+# vgg.to(device)
 
 class VGGNormalizer():
     def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
@@ -20,7 +19,7 @@ class VGGNormalizer():
         return self.transform((x-self.mean)/self.std)
     
 
-def get_content_loss(input_image, output_image, device='cuda'):
+def get_content_loss(input_image, output_image, vgg, device='cuda'):
     '''
     Calculate content loss
     '''
@@ -47,17 +46,22 @@ def get_content_loss(input_image, output_image, device='cuda'):
 
     return content_loss
         
-def get_text_direction(source_text, style_text):
+def get_text_direction(source_text, style_text, model, device='cpu'):
     '''
     Calculate text direction
     '''
-    text_direction = style_text['average_pooling'] - source_text['average_pooling']
-    text_direction /= text_direction.norm(dim=-1, keepdim=True)
+    source_text = clip.tokenize(source_text).to(device)
+    source_text = model.encode_text(source_text)
+    
+    style_text = clip.tokenize(style_text).to(device)
+    style_text = model.encode_text(style_text)
+    
+    text_direction = style_text - source_text
+    text_direction = text_direction / text_direction.norm(dim=-1, keepdim=True)
     return text_direction
     
-def encode_img(images, device='cpu', preprocess=True):
+def encode_img(images, model, device='cpu', preprocess=True):
     '''use clip api to encode image into 512-dim vector'''
-    model, _ = clip.load("ViT-B/32", device=device)
     if preprocess:
         preprocessor = CLIPImageProcessor(device=device) # turns out to be exactly the same as the one in clip
         image = preprocessor(images)
@@ -87,19 +91,20 @@ def get_patches(imgs, args):
     
     return img_aug
 
-def get_img_direction(input_img, output_img, args, patch=False):
+
+def get_img_direction(input_img, output_img, args, model, patch=False):
     '''
     Calculate image direction
     '''
     if patch == True:
         output_img = get_patches(output_img, args)
-        crop_features = encode_img(output_img, device=args.device) # (batch_size x num_crops) x 512
+        crop_features = encode_img(output_img, model, device=args.device) # (batch_size x num_crops) x 512
         crop_features = crop_features.reshape((args.batch_size, args.num_crops, -1))
         image_features = torch.sum(crop_features, dim=1).clone()
     else:
-        image_features = encode_img(output_img, device=args.device) # batch_size x 512
+        image_features = encode_img(output_img, model, device=args.device) # batch_size x 512
         
-    source_features = encode_img(input_img, device=args.device, preprocess=False)
+    source_features = encode_img(input_img, model, device=args.device, preprocess=False)
 
     img_direction = (image_features-source_features)
     img_direction /= img_direction.clone().norm(dim=-1, keepdim=True)
