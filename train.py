@@ -5,12 +5,14 @@ import argparse
 from tqdm import tqdm
 from pathlib import Path
 import models.StyTR  as StyTR 
+from datetime import datetime
 import torch.utils.data as data
-from torchvision import  models
+from torchvision import models, utils
 from tensorboardX import SummaryWriter
 from sampler import InfiniteSamplerWrapper
 from dataset import ImageTokenDataset, RandomTextDataset
 from loss import get_content_loss, get_img_direction, get_text_direction, get_patch_loss, get_glob_loss
+
 
 def get_image_prior_losses(inputs_jit):
     diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
@@ -36,6 +38,10 @@ def warmup_learning_rate(optimizer, iteration_count):
 
 
 def main(args):
+    save_dir = Path(args.save_dir) / datetime.now().strftime("%Y%m%d-%H%M%S")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    args.save_dir = str(save_dir)
+
     # logging and tensorboard writers
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
@@ -69,8 +75,7 @@ def main(args):
     style_dataset = RandomTextDataset(args.style_texts) #TODO: try multiple styles?
 
     # probably shouldn't do this if not necessary, wasting mem
-    source = ["a photo"]
-    source_dataset = RandomTextDataset(source)
+    source_dataset = RandomTextDataset(args.source_texts)
 
     content_iter = iter(data.DataLoader(
         content_dataset, batch_size=args.batch_size,
@@ -129,7 +134,7 @@ def main(args):
             img = i.unsqueeze(0)
             var_loss += get_image_prior_losses(img)
 
-        total_loss = args.lambda_patch * patch_loss + args.content_weight * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
+        total_loss = args.lambda_patch * patch_loss + args.lambda_c * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
         total_loss_epoch.append(total_loss.item())
         optimizer.zero_grad()
         total_loss.backward()
@@ -150,6 +155,12 @@ def main(args):
         writer.add_scalar('dir loss: ', glob_loss.item())
         writer.add_scalar('TV loss: ', var_loss.item())
 
+        
+        if (iteration + 1) % 30 == 0:
+            # save targets
+            for idx, img in enumerate(targets):
+                utils.save_image(img, Path(args.save_dir)/f"{iteration}_{str(idx)}.png")
+
         if (iteration + 1) % args.save_model_interval == 0 or (iteration + 1) == args.max_iter:
             state_dict = network.state_dict()
             for key in state_dict.keys():
@@ -166,9 +177,11 @@ if __name__ == '__main__':
     # Basic options
     parser.add_argument('--content_dir', default='./input_content/', type=Path,   
                         help='Directory path to a batch of content images')
-    parser.add_argument('--style_texts', type=list[str], default=['fire','water'],
-                        help='List of style texts')
-    parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')  #run the train.py, please download the pretrained vgg checkpoint
+    parser.add_argument('--style_texts', type=str, default='./input_style/style.txt',
+                        help='txt of style texts')
+    parser.add_argument('--source_texts', type=str, default='./input_style/style.txt',
+                        help='txt of style texts')
+    parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')
 
     # Training options 
     parser.add_argument('--save_dir', default='./experiments',
@@ -182,14 +195,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--lr_decay', type=float, default=1e-5)
     parser.add_argument('--max_iter', type=int, default=160000)
-    parser.add_argument('--batch_size', type=int, default=2)
-    parser.add_argument('--style_weight', type=float, default=10.0)
-    parser.add_argument('--content_weight', type=float, default=7.0)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--save_model_interval', type=int, default=10000)
-    parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
-                            help="Type of positional embedding to use on top of the image features")
-    parser.add_argument('--hidden_dim', default=512, type=int,
-                            help="Size of the embeddings (dimension of the transformer)")
     parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch16',
                             help="CLIP model to use for the encoder")
     

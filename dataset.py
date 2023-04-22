@@ -52,9 +52,13 @@ class RandomTextDataset(data.Dataset):
     '''
     Dataset that returns random text descript for style transfer
     '''
-    def __init__(self, text=['fire', 'pencil', 'water']):
+    def __init__(self, text_file):
         super(RandomTextDataset, self).__init__()
-        self.text = text
+        # read text file line by line
+        self.text = []
+        with open(text_file, 'r') as f:
+            for line in f:
+                self.text.append(line.strip())
         
     def __getitem__(self, index):
         return self.text[index]

@@ -111,8 +111,7 @@ def get_patch_loss(img_direction, text_direction, args):
     Calculate patch loss
     '''
     tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
-    tmp_loss[tmp_loss < args.thresh] = 0 # TODO: add args
-    #tmp_loss = torch.randn(64)
+    tmp_loss[tmp_loss < args.thresh] = 0 
     patch_loss = tmp_loss.mean()
 
     return patch_loss
