@@ -9,16 +9,16 @@ python train.py \
     --save_dir ./experiments \
     --log_dir ./logs \
     --device cuda \
-    --lr 5e-4 \
+    --lr 1e-3 \
     --lr_decay 1e-5 \
     --max_iter 1000 \
     --save_model_interval 500 \
     --batch_size 1 \
     --clip_model openai/clip-vit-base-patch16\
-    --lambda_tv 2e-3 \
-    --lambda_patch 9000 \
-    --lambda_dir 500 \
-    --lambda_c 150 \
+    --lambda_tv 0 \
+    --lambda_patch 1 \
+    --lambda_dir 1 \
+    --lambda_c 1 \
     --n_threads 0 \
     --thresh 0.7 \
     --crop_size 128 \
@@ -31,7 +31,8 @@ python train.py \
     --encoder_heads 8 \
     --encoder_dropout 0.1 \
     --encoder_activation relu \
-    --encoder_normalize_before True
+    --encoder_normalize_before True \
+    --exp_name content_w_mse_and_patch_dir_loss
 
 
 
