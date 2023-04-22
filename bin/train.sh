@@ -11,8 +11,8 @@ python train.py \
     --device cuda \
     --lr 5e-4 \
     --lr_decay 1e-5 \
-    --max_iter 100000 \
-    --save_model_interval 5000 \
+    --max_iter 1000 \
+    --save_model_interval 500 \
     --batch_size 1 \
     --clip_model openai/clip-vit-base-patch16\
     --lambda_tv 2e-3 \

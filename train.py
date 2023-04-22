@@ -110,13 +110,13 @@ def main(args):
             adjust_learning_rate(optimizer, iteration_count=iteration)
 
         # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
-        content_images, vgg_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
+        content_images, raw_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
         style_texts = next(style_iter)
         source_texts = next(source_iter)
         
         targets = network(content_images, style_texts)
         
-        content_loss = get_content_loss(vgg_images, targets, vgg, device=args.device)
+        content_loss = get_content_loss(raw_images, targets, vgg, device=args.device)
         
         img_direction = get_img_direction(content_images, targets, args, model, patch=True)
         text_direction = get_text_direction(style_texts, source_texts, model, device=args.device)
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--lr_decay', type=float, default=1e-5)
     parser.add_argument('--max_iter', type=int, default=160000)
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=2)
     parser.add_argument('--save_model_interval', type=int, default=10000)
     parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch16',
                             help="CLIP model to use for the encoder")

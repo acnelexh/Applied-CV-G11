@@ -1,20 +1,11 @@
 import torch
 import torchvision
 import numpy as np
+import PIL
 from pathlib import Path
 import torch.utils.data as data
 from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
 from template import imagenet_templates
-
-class VGGNormalizer():
-    def __init__(self, device='cpu', mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
-        self.mean = torch.tensor(mean).view(1,-1,1,1).to(device)
-        self.std = torch.tensor(std).view(1,-1,1,1).to(device)
-        self.transform = torchvision.transforms.Compose(
-            [torchvision.transforms.Resize(size=(224, 224))])
-    
-    def __call__(self, x) -> torch.Tensor:
-        return self.transform((x-self.mean)/self.std)
     
 class ImageTokenDataset(data.Dataset):
     '''
@@ -22,12 +13,13 @@ class ImageTokenDataset(data.Dataset):
     '''
     def __init__(self,
                 image_dir: Path,
+                image_size: int = 224,
                 device='cpu'):
         super(ImageTokenDataset, self).__init__()
         self.image_dir = image_dir
         self.image_processor = CLIPImageProcessor()
         self.device = device
-        self.vgg_transform = VGGNormalizer(device=device)
+        self.resize = torchvision.transforms.Resize(size=(image_size, image_size))
 
         self.images = [f for f in self.image_dir.glob('*')]
 
@@ -36,13 +28,15 @@ class ImageTokenDataset(data.Dataset):
         Return processed images
         One is preprocessed by CLIPImageProcessor, one is by source transform
         ''' 
-        raw_img = torchvision.io.read_image(str(self.images[index])).to(self.device)
+        raw_img = PIL.Image.open(str(self.images[index]))
+        raw_img = torchvision.transforms.functional.to_tensor(raw_img).to(self.device)
+        #raw_img = torchvision.io.read_image(str(self.images[index]), ).to(self.device)
         img = self.image_processor(raw_img)
         img = torch.tensor(np.array(img['pixel_values'])).squeeze(0).to(self.device)
         #source_img = torchvision.io.read_image(str(self.images[index]))
-        vgg_img = self.vgg_transform(raw_img).squeeze(0)
+        resize_img = self.resize(raw_img).squeeze(0)
         # for model, pathloss, vgg content loss
-        return img, vgg_img
+        return img, resize_img
 
     def __len__(self):
         return len(self.images)
