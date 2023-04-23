@@ -12,13 +12,13 @@ python train.py \
     --lr 1e-3 \
     --lr_decay 1e-5 \
     --max_iter 1000 \
-    --save_model_interval 500 \
+    --save_model_interval 5000 \
     --batch_size 1 \
     --clip_model openai/clip-vit-base-patch16\
     --lambda_tv 0 \
     --lambda_patch 1 \
     --lambda_dir 1 \
-    --lambda_c 1 \
+    --lambda_c 10 \
     --n_threads 0 \
     --thresh 0.7 \
     --crop_size 128 \
@@ -26,8 +26,8 @@ python train.py \
     --prompt_engineering True \
     --input_size 224 \
     --encoder_embed_dim 512 \
-    --encoder_ffn_dim 512 \
-    --encoder_depth 4 \
+    --encoder_ffn_dim 256 \
+    --encoder_depth 6 \
     --encoder_heads 8 \
     --encoder_dropout 0.1 \
     --encoder_activation relu \

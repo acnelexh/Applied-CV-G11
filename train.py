@@ -1,7 +1,9 @@
 import os
+import PIL
 import clip
 import torch
 import argparse
+import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 import models.StyTR  as StyTR 
@@ -38,13 +40,20 @@ def warmup_learning_rate(optimizer, iteration_count):
 
 
 def main(args):
-    save_dir = Path(args.save_dir) / datetime.now().strftime("%Y%m%d-%H%M%S")
+    # save training parameters
+    with open(os.path.join(args.save_dir, 'train.sh'), 'w') as f:
+        f.write('#!/bin/bash\n\n')
+        f.write('python train.py \\\n')
+        for key, value in vars(args).items():
+            f.write("   --{} {} \\\n".format(key, value))
+            
+    save_dir = Path(args.save_dir) / f"{args.exp_name}" / datetime.now().strftime("%Y%m%d-%H%M%S")
     save_dir.mkdir(parents=True, exist_ok=True)
     args.save_dir = str(save_dir)
 
     # logging and tensorboard writers
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
+    # if not os.path.exists(args.save_dir):
+    #     os.makedirs(args.save_dir)
     if not os.path.exists(args.log_dir):
         os.mkdir(args.log_dir)
     writer = SummaryWriter(log_dir=args.log_dir)
@@ -97,8 +106,8 @@ def main(args):
 
     # TODO: discuss with team: use clip_styler sched policy or don't change
 
-    if not os.path.exists(args.save_dir+"/test"):
-        os.makedirs(args.save_dir+"/test")
+    # if not os.path.exists(args.save_dir+"/test"):
+    #     os.makedirs(args.save_dir+"/test")
 
     total_loss_epoch = []
     
@@ -159,7 +168,13 @@ def main(args):
         if (iteration + 1) % 30 == 0:
             # save targets
             for idx, img in enumerate(targets):
-                utils.save_image(img, Path(args.save_dir)/f"{iteration}_{str(idx)}.png")
+                # normalize img to unit8
+                img = img.detach().cpu().numpy()
+                img = np.transpose(img, (1, 2, 0))
+                img = (img - np.min(img)) / (np.max(img) - np.min(img))
+                img = (img * 255).astype(np.uint8)
+                # save image
+                PIL.Image.fromarray(img).save(Path(args.save_dir)/ f'iter_{iteration}_{idx}.png')
 
         if (iteration + 1) % args.save_model_interval == 0 or (iteration + 1) == args.max_iter:
             state_dict = network.state_dict()
@@ -182,6 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--source_texts', type=str, default='./input_style/style.txt',
                         help='txt of style texts')
     parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')
+    parser.add_argument('--exp_name', type=str, default='test')
 
     # Training options 
     parser.add_argument('--save_dir', default='./experiments',
