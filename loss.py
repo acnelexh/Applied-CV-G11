@@ -4,6 +4,7 @@ from torchvision import transforms
 from torch.nn.functional import mse_loss
 from transformers import CLIPImageProcessor
 from util.clip_utils import get_features
+from template import imagenet_templates
 
 class CLIPNormalizer():
     def __init__(self, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711],device='cuda'):
@@ -48,14 +49,19 @@ def get_content_loss(input_image, output_image, vgg, device='cuda'):
     #     content_loss += torch.mean((target_features[i]['conv5_2'] - content_features[i]['conv5_2']) ** 2)
 
     # return content_loss
-        
+
+def compose_text_with_templates(text: str, templates=imagenet_templates) -> list:
+    return [template.format(text) for template in templates]
+
 def get_text_direction(source_text, style_text, model, device='cpu'):
     '''
     Calculate text direction
     '''
+    source_text = compose_text_with_templates(source_text, imagenet_templates)
     source_text = clip.tokenize(source_text).to(device)
     source_text = model.encode_text(source_text)
     
+    style_text = compose_text_with_templates(style_text, imagenet_templates)
     style_text = clip.tokenize(style_text).to(device)
     style_text = model.encode_text(style_text)
     
