@@ -128,7 +128,7 @@ def get_img_direction(input_img, output_img, args, model, patch=False):
         crop_features = crop_features.reshape((args.batch_size, args.num_crops, -1))
         image_features = torch.sum(crop_features, dim=1).clone()
     else:
-        image_features = encode_img(output_img, model) # batch_size x 512
+        image_features = encode_img(normalizer(output_img), model) # batch_size x 512
         
     source_features = encode_img(input_img, model)
 
