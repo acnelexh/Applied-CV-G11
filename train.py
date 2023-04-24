@@ -39,17 +39,17 @@ def warmup_learning_rate(optimizer, iteration_count):
         param_group['lr'] = lr
 
 
-def main(args):
+def main(args):  
+    save_dir = Path(args.save_dir) / f"{args.exp_name}" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    args.save_dir = str(save_dir)
+
     # save training parameters
     with open(os.path.join(args.save_dir, 'train.sh'), 'w') as f:
         f.write('#!/bin/bash\n\n')
         f.write('python train.py \\\n')
         for key, value in vars(args).items():
             f.write("   --{} {} \\\n".format(key, value))
-            
-    save_dir = Path(args.save_dir) / f"{args.exp_name}" / datetime.now().strftime("%Y%m%d-%H%M%S")
-    save_dir.mkdir(parents=True, exist_ok=True)
-    args.save_dir = str(save_dir)
 
     # logging and tensorboard writers
     # if not os.path.exists(args.save_dir):
