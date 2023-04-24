@@ -75,7 +75,8 @@ def main(args):
         model, _ = clip.load("ViT-L/14", device=args.device)
     else:
         raise ValueError("Invalid CLIP model: %s" % args.clip_model)
-    model.requires_grad_ = False
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
     
     content_dataset = ImageTokenDataset(
         args.content_dir,

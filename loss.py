@@ -84,7 +84,6 @@ def get_text_direction(source_text, style_text, model, device='cpu'):
     #print("text direction shape is: ", text_direction.shape)
     #print("The text direction is: ")
     #print(text_direction)
-    exit()
     return text_direction
     
 def encode_img(images, model):
