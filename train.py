@@ -124,8 +124,8 @@ def main(args):
         content_images, raw_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
         style_texts = next(style_iter)
         source_texts = next(source_iter)
-        print("The style texts are: ")
-        print(style_texts)   
+        #print("The style texts are: ")
+        #print(style_texts)   
         targets = network(content_images, style_texts)
         
         content_loss = get_content_loss(raw_images, targets, vgg, device=args.device)
