@@ -96,7 +96,8 @@ def main(args):
         style_dataset, batch_size=args.batch_size,
         sampler=InfiniteSamplerWrapper(style_dataset),
         num_workers=args.n_threads))
-
+    #print("The style iter is: \n")
+    #print(style_iter)
     source_iter = iter(data.DataLoader(
         source_dataset, batch_size=args.batch_size,
         sampler=InfiniteSamplerWrapper(source_dataset),
@@ -122,13 +123,14 @@ def main(args):
         content_images, raw_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
         style_texts = next(style_iter)
         source_texts = next(source_iter)
-        
+        print("The style texts are: ")
+        print(style_texts)   
         targets = network(content_images, style_texts)
         
         content_loss = get_content_loss(raw_images, targets, vgg, device=args.device)
         
         img_direction = get_img_direction(content_images, targets, args, model, patch=True)
-        text_direction = get_text_direction(style_texts, source_texts, model, device=args.device)
+        text_direction = get_text_direction( source_texts, style_texts, model, device=args.device)
         
         # patch loss 
         patch_loss = get_patch_loss(img_direction, text_direction, args)

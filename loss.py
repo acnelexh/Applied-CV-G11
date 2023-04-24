@@ -51,22 +51,40 @@ def get_content_loss(input_image, output_image, vgg, device='cuda'):
     # return content_loss
 
 def compose_text_with_templates(text: str, templates=imagenet_templates) -> list:
-    return [template.format(text) for template in templates]
+    return [template.format(*text) for template in templates]
 
 def get_text_direction(source_text, style_text, model, device='cpu'):
     '''
     Calculate text direction
     '''
     source_text = compose_text_with_templates(source_text, imagenet_templates)
+    #print("raw source text", source_text)
     source_text = clip.tokenize(source_text).to(device)
     source_text = model.encode_text(source_text)
-    
+    #print("source text before normalizing", source_text)
+    source_text = source_text.mean(axis=0, keepdim=True)
+    source_text /= source_text.norm(dim=-1, keepdim=True)
+
+    #print("The source text shape is: ", source_text.shape)
+    #print("source text after normalizing", source_text)
+    #exit()
     style_text = compose_text_with_templates(style_text, imagenet_templates)
     style_text = clip.tokenize(style_text).to(device)
     style_text = model.encode_text(style_text)
-    
-    text_direction = style_text - source_text
+    style_text = style_text.mean(axis=0, keepdim=True)
+    style_text /= style_text.norm(dim=-1, keepdim=True)
+
+    #print("style text shape", style_text.shape)
+    #print("source text shape", source_text.shape)
+    #print("The style text is: ", style_text)
+    #print("The source_text is: ", source_text)
+
+    text_direction = (style_text - source_text).repeat(64,1) #TODO: make image_features[0] (64) an argument to pass in?
     text_direction = text_direction / text_direction.norm(dim=-1, keepdim=True)
+    #print("text direction shape is: ", text_direction.shape)
+    #print("The text direction is: ")
+    #print(text_direction)
+    exit()
     return text_direction
     
 def encode_img(images, model):
