@@ -51,39 +51,40 @@ def get_content_loss(input_image, output_image, vgg, device='cuda'):
     # return content_loss
 
 def compose_text_with_templates(text: str, templates=imagenet_templates) -> list:
-    return [template.format(*text) for template in templates]
+    return [template.format(text) for template in templates]
 
-def get_text_direction(source_text, style_text, model, device='cpu'):
+def get_text_direction(source_text, style_text, model, args, device='cpu', glob=True):
     '''
     Calculate text direction
     '''
+    source_text = 'a photo'
     source_text = compose_text_with_templates(source_text, imagenet_templates)
     #print("raw source text", source_text)
     source_text = clip.tokenize(source_text).to(device)
     source_text = model.encode_text(source_text)
     #print("source text before normalizing", source_text)
     source_text = source_text.mean(axis=0, keepdim=True)
-    source_text /= source_text.norm(dim=-1, keepdim=True)
+    source_text /= source_text.norm(dim=-1, keepdim=True) # 1 x 512
 
     #print("The source text shape is: ", source_text.shape)
     #print("source text after normalizing", source_text)
     #exit()
-    style_text = compose_text_with_templates(style_text, imagenet_templates)
-    style_text = clip.tokenize(style_text).to(device)
-    style_text = model.encode_text(style_text)
-    style_text = style_text.mean(axis=0, keepdim=True)
-    style_text /= style_text.norm(dim=-1, keepdim=True)
+    tmp = []
+    for style in style_text:
+        style_text = compose_text_with_templates(style, imagenet_templates)
+        style_text = clip.tokenize(style_text).to(device)
+        style_text = model.encode_text(style_text)
+        style_text = style_text.mean(axis=0, keepdim=True)
+        style_text /= style_text.norm(dim=-1, keepdim=True)
+        tmp.append(style_text.squeeze(0))
+    style_text = torch.stack(tmp, dim=0) # Batch x 512
 
-    #print("style text shape", style_text.shape)
-    #print("source text shape", source_text.shape)
-    #print("The style text is: ", style_text)
-    #print("The source_text is: ", source_text)
-
-    text_direction = (style_text - source_text).repeat(64,1) #TODO: make image_features[0] (64) an argument to pass in?
+    text_direction = (style_text - source_text) #TODO: make image_features[0] (64) an argument to pass in?
     text_direction = text_direction / text_direction.norm(dim=-1, keepdim=True)
-    #print("text direction shape is: ", text_direction.shape)
-    #print("The text direction is: ")
-    #print(text_direction)
+
+    if glob == False:
+        text_direction = text_direction.repeat(1,args.num_crops).reshape(style_text.shape[0]*args.num_crops, -1)
+
     return text_direction
     
 def encode_img(images, model):
@@ -118,20 +119,16 @@ def get_img_direction(input_img, output_img, args, model, patch=False):
     Calculate image direction
     '''
     normalizer = CLIPNormalizer()
+    source_features = encode_img(input_img, model)
     if patch == True:
         output_image = get_patches(output_img, args)
-        # output_image = output_image.reshape((output_image.shape[0], output_image.shape[1], -1))
-        # output_image -= torch.min(output_image, dim=2, keepdim=True)[0]
-        # output_image /= torch.max(output_image, dim=2, keepdim=True)[0]
-        # output_image = output_image.reshape((output_image.shape[0],output_image.shape[1], 224, 224))
         crop_features = encode_img(normalizer(output_image), model) # (batch_size x num_crops) x 512
-        crop_features = crop_features.reshape((args.batch_size, args.num_crops, -1))
-        image_features = torch.sum(crop_features, dim=1).clone()
+        image_features = crop_features
+        source_features = source_features.repeat(1,args.num_crops).reshape(source_features.shape[0]*args.num_crops, -1)
     else:
         image_features = encode_img(normalizer(output_img), model) # batch_size x 512
         
-    source_features = encode_img(input_img, model)
-
+    
     img_direction = (image_features-source_features)
     img_direction /= img_direction.clone().norm(dim=-1, keepdim=True)
 

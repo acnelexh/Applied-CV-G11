@@ -106,10 +106,6 @@ def main(args):
     
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
 
-    # TODO: discuss with team: use clip_styler sched policy or don't change
-
-    # if not os.path.exists(args.save_dir+"/test"):
-    #     os.makedirs(args.save_dir+"/test")
 
     total_loss_epoch = []
     
@@ -131,13 +127,14 @@ def main(args):
         content_loss = get_content_loss(raw_images, targets, vgg, device=args.device)
         
         img_direction = get_img_direction(content_images, targets, args, model, patch=True)
-        text_direction = get_text_direction( source_texts, style_texts, model, device=args.device)
+        text_direction = get_text_direction(source_texts, style_texts, model, args, device=args.device, glob=False)
         
         # patch loss 
         patch_loss = get_patch_loss(img_direction, text_direction, args)
 
         # global loss
         img_direction = get_img_direction(content_images, targets, args, model, patch=False)
+        text_direction = get_text_direction(source_texts, style_texts, model, args, device=args.device, glob=True)
         glob_loss = get_glob_loss(img_direction, text_direction)
 
         #var_loss = get_image_prior_losses(targets) # total variation loss, should loop
@@ -171,13 +168,14 @@ def main(args):
         if (iteration + 1) % 30 == 0:
             # save targets
             for idx, img in enumerate(targets):
+                style_descrption = style_texts[idx]
                 # normalize img to unit8
                 img = img.detach().cpu().numpy()
                 img = np.transpose(img, (1, 2, 0))
                 img = (img - np.min(img)) / (np.max(img) - np.min(img))
                 img = (img * 255).astype(np.uint8)
                 # save image
-                PIL.Image.fromarray(img).save(Path(args.save_dir)/ f'iter_{iteration}_{idx}.png')
+                PIL.Image.fromarray(img).save(Path(args.save_dir)/ f'iter_{iteration}_{idx}_{style_descrption}.png')
 
         if (iteration + 1) % args.save_model_interval == 0 or (iteration + 1) == args.max_iter:
             state_dict = network.state_dict()
@@ -197,7 +195,7 @@ if __name__ == '__main__':
                         help='Directory path to a batch of content images')
     parser.add_argument('--style_texts', type=str, default='./input_style/style.txt',
                         help='txt of style texts')
-    parser.add_argument('--source_texts', type=str, default='./input_style/style.txt',
+    parser.add_argument('--source_texts', type=str, default='./input_style/source.txt',
                         help='txt of style texts')
     parser.add_argument('--vgg', type=str, default='./experiments/vgg_normalised.pth')
     parser.add_argument('--exp_name', type=str, default='test')
