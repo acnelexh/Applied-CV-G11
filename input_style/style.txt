@@ -1,5 +1,25 @@
-water
+contrastic
 fire
-stone
-scream
-sand
+aqutic
+radiant
+icy
+cyberpunk
+gothic
+surreal
+baroque
+futuristic
+industrial
+vintage
+rustic
+bohemian
+desert
+coastal
+victorian
+modern
+contemporary
+mid-century
+pop art
+renaissance
+oil painting
+golden
+vibrant

@@ -1,18 +1,19 @@
 #!/bin/bash
 python train.py \
-   --content_dir input_content \
+   --content_dir DIV2K_train_HR \
    --style_texts input_style/style.txt \
    --source_texts input_style/source.txt \
    --vgg ./experiments/vgg_normalised.pth \
    --exp_name content_w_mse_and_patch_dir_loss \
-   --save_dir experiments/content_w_mse_and_patch_dir_loss/20230425-030033 \
+   --save_dir experiments \
    --log_dir ./logs \
    --device cuda \
-   --lr 0.001 \
+   --lr 1e-4 \
    --lr_decay 1e-05 \
-   --max_iter 300 \
-   --batch_size 1 \
-   --save_model_interval 400 \
+   --max_iter 500000 \
+   --batch_size 32 \
+   --max_batch_size 2 \
+   --save_model_interval 1000 \
    --clip_model openai/clip-vit-base-patch16 \
    --lambda_tv 0.0 \
    --lambda_patch 4500.0 \
@@ -25,9 +26,10 @@ python train.py \
    --prompt_engineering True \
    --input_size 224 \
    --encoder_embed_dim 512 \
-   --encoder_ffn_dim 256 \
-   --encoder_depth 6 \
+   --encoder_ffn_dim 512 \
+   --encoder_depth 4 \
    --encoder_heads 8 \
    --encoder_dropout 0.1 \
    --encoder_activation relu \
    --encoder_normalize_before True \
+   --exp_name formal_training

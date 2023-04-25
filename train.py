@@ -41,6 +41,7 @@ def warmup_learning_rate(optimizer, iteration_count):
 
 def main(args):  
     save_dir = Path(args.save_dir) / f"{args.exp_name}" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    print('mkdir', save_dir, '...')
     save_dir.mkdir(parents=True, exist_ok=True)
     args.save_dir = str(save_dir)
 
@@ -88,19 +89,19 @@ def main(args):
     source_dataset = RandomTextDataset(args.source_texts)
 
     content_iter = iter(data.DataLoader(
-        content_dataset, batch_size=args.batch_size,
+        content_dataset, batch_size=args.max_batch_size,
         sampler=InfiniteSamplerWrapper(content_dataset),
         num_workers=args.n_threads))
 
     # TODO: check, returns text_features (text embedding), normalize? 
     style_iter = iter(data.DataLoader(
-        style_dataset, batch_size=args.batch_size,
+        style_dataset, batch_size=args.max_batch_size,
         sampler=InfiniteSamplerWrapper(style_dataset),
         num_workers=args.n_threads))
     #print("The style iter is: \n")
     #print(style_iter)
     source_iter = iter(data.DataLoader(
-        source_dataset, batch_size=args.batch_size,
+        source_dataset, batch_size=args.max_batch_size,
         sampler=InfiniteSamplerWrapper(source_dataset),
         num_workers=args.n_threads))
     
@@ -108,7 +109,13 @@ def main(args):
 
 
     total_loss_epoch = []
-    
+
+    # since gpu can only support batch size of 2
+    # iterate thorugh the dataset, and update the model
+    # when there is enough gradient
+
+    update_every_n_iters = args.batch_size // args.max_batch_size
+
     for iteration in tqdm(range(args.max_iter)):
         #warm up
         if iteration < 1e4:
@@ -143,14 +150,19 @@ def main(args):
             img = i.unsqueeze(0)
             var_loss += get_image_prior_losses(img)
 
-        total_loss = args.lambda_patch * patch_loss + args.lambda_c * content_loss + args.lambda_tv * var_loss + args.lambda_dir * glob_loss
-        total_loss_epoch.append(total_loss.item())
-        optimizer.zero_grad()
+        total_loss = \
+                args.lambda_patch * patch_loss \
+                + args.lambda_c * content_loss \
+                + args.lambda_tv * var_loss \
+                + args.lambda_dir * glob_loss
+        total_loss = total_loss / update_every_n_iters # normalize loss
         total_loss.backward()
-        optimizer.step()
-        ####
 
-        if iteration % 50 == 0:
+        if iteration % update_every_n_iters == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+
+        if iteration % (100 * update_every_n_iters) == 0:
             print("After %d criterions:" % iteration)
             print('Total loss: ', total_loss.item())
             print('Content loss: ', content_loss.item())
@@ -158,14 +170,14 @@ def main(args):
             print('dir loss: ', glob_loss.item())
             print('TV loss: ', var_loss.item())
 
-        writer.add_scalar('Total loss: ', total_loss.item())
-        writer.add_scalar('Content loss ', content_loss.item())
-        writer.add_scalar('patch loss: ', patch_loss.item())
-        writer.add_scalar('dir loss: ', glob_loss.item())
-        writer.add_scalar('TV loss: ', var_loss.item())
+            writer.add_scalar('Total loss: ', total_loss.item())
+            writer.add_scalar('Content loss ', content_loss.item())
+            writer.add_scalar('patch loss: ', patch_loss.item())
+            writer.add_scalar('dir loss: ', glob_loss.item())
+            writer.add_scalar('TV loss: ', var_loss.item())
 
         
-        if (iteration + 1) % 30 == 0:
+        if (iteration + 1) % (100 * update_every_n_iters) == 0:
             # save targets
             for idx, img in enumerate(targets):
                 style_descrption = style_texts[idx]
@@ -177,7 +189,7 @@ def main(args):
                 # save image
                 PIL.Image.fromarray(img).save(Path(args.save_dir)/ f'iter_{iteration}_{idx}_{style_descrption}.png')
 
-        if (iteration + 1) % args.save_model_interval == 0 or (iteration + 1) == args.max_iter:
+        if (iteration + 1) % (args.save_model_interval * update_every_n_iters) == 0 or (iteration + 1) == args.max_iter:
             state_dict = network.state_dict()
             for key in state_dict.keys():
                 state_dict[key] = state_dict[key].to(torch.device('cpu'))
@@ -212,7 +224,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=5e-4)
     parser.add_argument('--lr_decay', type=float, default=1e-5)
     parser.add_argument('--max_iter', type=int, default=160000)
-    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--max_batch_size', type=int, default=2)
     parser.add_argument('--save_model_interval', type=int, default=10000)
     parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch16',
                             help="CLIP model to use for the encoder")
