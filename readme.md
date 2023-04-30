@@ -6,7 +6,7 @@ This projected is based on two paper, [SyTr^2 : Image Style Transfer with Transf
 
 ## Model Architecture and Framework
 <p align="center">
-<img src="./Figure/StyTr3.png" width="90%" height="90%">
+<img src="./Figure/StyTr3.png" width="80%" height="80%">
 </p>
 The overall pipline of our model. First, we utilize CLIP to encode the content image and style text into tokens. A learnable position are applied to these tokens before they are fed into our encoder model, where self-attention between image tokens and style tokens is performed. The resulting output image tokens are concatenated into a tensor and passed through a CNN with transpose convolution for additional upsampling. Notably, the CLIP model remains frozen during the entire training process. <br>
 
@@ -26,4 +26,4 @@ Training can be initiated by running <br>
 ```
 ./bin/train.sh
 ```
-The train.sh file contains all the necessary arguments and training parameter options needed to configure and execute the model's training process.
+The train.sh file contains all the necessary arguments and training parameter options needed to configure and execute the model's training process. To begin training the model, simply configure the desired parameters within the train.sh file and execute the script. This will initiate the training process, and the model will be optimized according to the specified configuration.
