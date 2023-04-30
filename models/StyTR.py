@@ -1,9 +1,8 @@
 import math
 import torch
 from torch import nn
-import torch.nn.functional as F
-from models.unet import TokenDecoder
 from transformers import AutoTokenizer, CLIPTextModel, CLIPVisionModel
+
 from models.transformer import TransformerEncoder, TransformerEncoderLayer
 from template import imagenet_templates
 
@@ -11,7 +10,7 @@ class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     def __init__(self, args):
         super().__init__()
-        #clip stuff
+        #load, freeze and prepare to use CLIP
         self.vision_model = CLIPVisionModel.from_pretrained(args.clip_model)
         self.text_model = CLIPTextModel.from_pretrained(args.clip_model)
         self.tokenizer = AutoTokenizer.from_pretrained(args.clip_model)
@@ -37,9 +36,11 @@ class StyTrans(nn.Module):
         dummy_sample = self.vision_model(torch.rand(2, 3, input_size, input_size)) 
         img_token_length = dummy_sample.last_hidden_state.shape[1] - 1
         text_token_length = 1
+        
         # learnable positional embedding
         self.position_embedding = nn.Embedding(
             img_token_length + text_token_length, 512)
+            
         # decoder
         self.decoder = build_decoder(int(math.sqrt(img_token_length)), input_size)
 
@@ -73,7 +74,8 @@ class StyTrans(nn.Module):
         image_tokens = self.vision_model(content)
         image_tokens = image_tokens.last_hidden_state[:, 1:, :] # get ride of cls token
         
-        # cache the style tokens, TODO recheck for gradient
+        # cache the style tokens 
+        #TODO: recheck for gradient
         style_tokens = []
         for batch in style:
             if batch in self.style_cache:
@@ -98,6 +100,7 @@ class StyTrans(nn.Module):
         input += self.position_embedding(torch.arange(input.shape[1], device=input.device))
 
         output_tokens = self.encoder(input)
+        
         # decode the tokens into image
         image_tokens = output_tokens[:, :-1]
         D = int(math.sqrt(image_tokens.shape[1]))
@@ -106,7 +109,10 @@ class StyTrans(nn.Module):
         return output
 
 
-# Testing ground
+# Testing ground below 
+#=================================================================================
+from models.unet import TokenDecoder
+
 def build_decoder(input_dimension, target_dimension):
     """
     Built decoder automatically depending on the input size

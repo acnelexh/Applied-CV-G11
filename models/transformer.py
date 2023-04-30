@@ -1,15 +1,16 @@
 import copy
-from typing import Optional, List
-
+from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
-from function import normal,normal_style
 import numpy as np
 import os
+
 device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 os.environ["CUDA_VISIBLE_DEVICES"] = "2, 3"
+
 class Transformer(nn.Module):
+    """Transformer class that is meant to understand what is going on with the style transfer"""
 
     def __init__(self, d_model=512, nhead=8, num_encoder_layers=3,
                  num_decoder_layers=3, dim_feedforward=2048, dropout=0.1,
@@ -17,12 +18,14 @@ class Transformer(nn.Module):
                  return_intermediate_dec=False):
         super().__init__()
 
+        #create encoder 
         encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
         self.encoder_c = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
         self.encoder_s = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
 
+        #create decoder
         decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward,
                                                 dropout, activation, normalize_before)
         decoder_norm = nn.LayerNorm(d_model)
@@ -74,6 +77,7 @@ class Transformer(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
+    """helper class"""
 
     def __init__(self, encoder_layer, num_layers, norm=None):
         super().__init__()
@@ -85,6 +89,7 @@ class TransformerEncoder(nn.Module):
                 mask: Optional[Tensor] = None,
                 src_key_padding_mask: Optional[Tensor] = None,
                 pos: Optional[Tensor] = None):
+        """pass data through and encode it"""
         output = src
         
         for layer in self.layers:
@@ -98,7 +103,8 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-
+    """helper class"""
+     
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False):
         super().__init__()
         self.layers = _get_clones(decoder_layer, num_layers)

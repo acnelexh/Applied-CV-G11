@@ -4,6 +4,7 @@ import numpy as np
 import PIL
 from pathlib import Path
 import torch.utils.data as data
+
 from transformers import AutoTokenizer, CLIPTextModel, CLIPImageProcessor, CLIPVisionModel
 from template import imagenet_templates
     
@@ -60,7 +61,8 @@ class RandomTextDataset(data.Dataset):
     def __len__(self):
         return len(self.text)
 
-# Testing ground=================================================================================
+# Testing ground below 
+#=================================================================================
 
 def test_text_encoder():
     "https://discuss.huggingface.co/t/last-hidden-state-vs-pooler-output-in-clipvisionmodel/26281"

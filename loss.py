@@ -1,9 +1,8 @@
-import clip
 import torch
 from torchvision import transforms
 from torch.nn.functional import mse_loss
-from transformers import CLIPImageProcessor
-from util.clip_utils import get_features
+
+import clip
 from template import imagenet_templates
 
 class CLIPNormalizer():
@@ -23,10 +22,22 @@ class VGGNormalizer():
     
     def __call__(self, x) -> torch.Tensor:
         return self.transform(x)
-    
-def get_content_loss(input_image, output_image, vgg, device='cuda'):
+
+def get_content_loss(input_image, output_image, device='cuda'):
     '''
-    Calculate content loss
+    Calculate and return the content loss
+    '''
+    # noramlize targets to 0-1
+    normalizer = VGGNormalizer()
+    input_image = normalizer(input_image)
+    output_image = normalizer(output_image)
+
+    # using mean squared error loss for now
+    return mse_loss(input_image, output_image)
+
+def get_content_loss_with_vgg(input_image, output_image, vgg, device='cuda'):
+    '''
+    Calculate and return the content loss
     '''
     # noramlize targets to 0-1
     normalizer = VGGNormalizer()

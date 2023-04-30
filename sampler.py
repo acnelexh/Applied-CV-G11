@@ -3,6 +3,7 @@ from torch.utils import data
 
 
 def InfiniteSampler(n):
+    """helper function for InfiniteSamplerWrapper"""
     # i = 0
     i = n - 1
     order = np.random.permutation(n)
@@ -16,6 +17,7 @@ def InfiniteSampler(n):
 
 
 class InfiniteSamplerWrapper(data.sampler.Sampler):
+    """class to allow the dataset to wrap around and keep sampling if necessary"""
     def __init__(self, data_source):
         self.num_samples = len(data_source)
 

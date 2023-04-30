@@ -3,7 +3,6 @@ python train.py \
    --content_dir DIV2K_train_HR \
    --style_texts input_style/style.txt \
    --source_texts input_style/source.txt \
-   --vgg ./experiments/vgg_normalised.pth \
    --exp_name content_w_mse_and_patch_dir_loss \
    --save_dir experiments \
    --log_dir ./logs \

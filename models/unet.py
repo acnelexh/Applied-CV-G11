@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+#part of testing StyTR.py
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
