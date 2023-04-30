@@ -1,50 +1,29 @@
-# StyTr^2 : Image Style Transfer with Transformers（CVPR2022）
-*Authors: [Yingying Deng](https://diyiiyiii.github.io/), Fan Tang, XingjiaPan, Weiming Dong, Chongyang Ma, Changsheng Xu*
+# Applied CV Final Project: Group 11
+# Unsupervise Text to Image Style Transfer with Transformer
+*Authors: Zongyu Chen, Cheng-Yu Liu, Jonathan Cappell
 
-This paper is proposed to achieve unbiased image style transfer based on the transformer model. We can promote the stylization effect compared with state-of-the-art methods.
-This repository is the official implementation of [SyTr^2 : Image Style Transfer with Transformers](https://arxiv.org/abs/2105.14576).
+This projected is based on two paper, [SyTr^2 : Image Style Transfer with Transformers](https://arxiv.org/abs/2105.14576) and [CLIPstyler](https://arxiv.org/abs/2112.00374). This project proposes a unsupervise framework for implementing text to image style transfer using a transformer model and CLIP embedding.
 
-## Results presentation 
+## Model Architecture and Framework
 <p align="center">
-<img src="https://github.com/diyiiyiii/StyTR-2/blob/main/Figure/Unbiased.png" width="90%" height="90%">
+<img src="./Figure/StyTr3.png" width="90%" height="90%">
 </p>
-Compared with some state-of-the-art algorithms, our method has a strong ability to avoid content leakage and has better feature representation ability.  <br>
-
-
-## Framework
-<p align="center">
-<img src="https://github.com/diyiiyiii/StyTR-2/blob/main/Figure/network.png" width="100%" height="100%">
-</p> 
-The overall pipeline of our StyTr^2 framework. We split the content and style images into patches, and use a linear projection to obtain image sequences. Then the content sequences added with CAPE are fed into the content transformer encoder, while the style sequences are fed into the style transformer encoder. Following the two transformer encoders, a multi-layer transformer decoder is adopted to stylize the content sequences according to the style sequences. Finally, we use a progressive upsampling decoder to obtain the stylized images with high-resolution.
-
+The overall pipline of our model. First, we utilize CLIP to encode the content image and style text into tokens. A learnable position are applied to these tokens before they are fed into our encoder model, where self-attention between image tokens and style tokens is performed. The resulting output image tokens are concatenated into a tensor and passed through a CNN with transpose convolution for additional upsampling. Notably, the CLIP model remains frozen during the entire training process. <br>
 
 
 ## Experiment
 ### Requirements
-* python 3.6
-* pytorch 1.4.0
+* python 3.9
+* pytorch 2.0.0
+* torchvision 0.15.1
+* transformers 4.28.1
 * PIL, numpy, scipy
+* [CLIP](https://github.com/openai/CLIP)
 * tqdm  <br> 
 
-### Testing 
-Pretrained models: [vgg-model](https://drive.google.com/file/d/1BinnwM5AmIcVubr16tPTqxMjUCE8iu5M/view?usp=sharing),  [vit_embedding](https://drive.google.com/file/d/1C3xzTOWx8dUXXybxZwmjijZN8SrC3e4B/view?usp=sharing), [decoder](https://drive.google.com/file/d/1fIIVMTA_tPuaAAFtqizr6sd1XV7CX6F9/view?usp=sharing), [Transformer_module](https://drive.google.com/file/d/1dnobsaLeE889T_LncCkAA2RkqzwsfHYy/view?usp=sharing)   <br> 
-Please download them and put them into the floder  ./experiments/  <br> 
+### Training Configuration and Execution
+Training can be initiated by running <br>  
 ```
-python test.py  --content_dir input/content/ --style_dir input/style/    --output out
+./bin/train.sh
 ```
-### Training  
-Style dataset is WikiArt collected from [WIKIART](https://www.wikiart.org/)  <br>  
-content dataset is COCO2014  <br>  
-```
-python train.py --style_dir ../../datasets/Images/ --content_dir ../../datasets/train2014 --save_dir models/ --batch_size 8
-```
-### Reference
-If you find our work useful in your research, please cite our paper using the following BibTeX entry ~ Thank you ^ . ^. Paper Link [pdf](https://arxiv.org/abs/2105.14576)<br> 
-```
-@inproceedings{deng2021stytr2,
-      title={StyTr^2: Image Style Transfer with Transformers}, 
-      author={Yingying Deng and Fan Tang and Weiming Dong and Chongyang Ma and Xingjia Pan and Lei Wang and Changsheng Xu},
-      booktitle={IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-      year={2022},
-}
-```
+The train.sh file contains all the necessary arguments and training parameter options needed to configure and execute the model's training process.
