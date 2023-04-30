@@ -10,22 +10,16 @@ from template import imagenet_templates
 class StyTrans(nn.Module):
     """ This is the style transform transformer module """
     def __init__(self, args):
-
         super().__init__()
-
-        self.mse_loss = nn.MSELoss()
-
         #clip stuff
         self.vision_model = CLIPVisionModel.from_pretrained(args.clip_model)
         self.text_model = CLIPTextModel.from_pretrained(args.clip_model)
-        #self.image_processor = CLIPImageProcessor()
         self.tokenizer = AutoTokenizer.from_pretrained(args.clip_model)
         self.prompt_engineering = args.prompt_engineering
         self.freeze_clip()
         self.style_cache = dict() # cache the style tokens
 
-        # build a solely encoder transformer
-        # to encode vision and text
+        # build a solely encoder transformer to encode vision and text
         encoder_layer = TransformerEncoderLayer(args.encoder_embed_dim,
                                                 args.encoder_heads,
                                                 args.encoder_ffn_dim,
@@ -37,8 +31,8 @@ class StyTrans(nn.Module):
         # projection layers for clip tokens
         self.fc_vision = nn.Linear(768, 512)
         self.fc_text = nn.Linear(512, 512)
-
         input_size = args.input_size
+        
         # calculate the token size
         dummy_sample = self.vision_model(torch.rand(2, 3, input_size, input_size)) 
         img_token_length = dummy_sample.last_hidden_state.shape[1] - 1
@@ -50,15 +44,18 @@ class StyTrans(nn.Module):
         self.decoder = build_decoder(int(math.sqrt(img_token_length)), input_size)
 
     def freeze_clip(self):
+        # freeze the clip model
         for param in self.vision_model.parameters():
             param.requires_grad = False
         for param in self.text_model.parameters():
             param.requires_grad = False
     
     def compose_text_with_templates(self, text: str, templates=imagenet_templates) -> list:
+        # prompt engineering
         return [template.format(text) for template in templates]
     
     def process_style(self, style):
+        # process the style text with prompt engineering
         if not self.prompt_engineering:
             template_text = ["a photo of " + style]
         else:
@@ -70,6 +67,8 @@ class StyTrans(nn.Module):
         """  
         Content: image tensor
         Style: description of style
+        
+        Output: image tensor
         """
         image_tokens = self.vision_model(content)
         image_tokens = image_tokens.last_hidden_state[:, 1:, :] # get ride of cls token
@@ -127,6 +126,7 @@ def build_decoder(input_dimension, target_dimension):
     return decoder
 
 def test_model():
+    ''' Test the model building. Ignore.'''
     build_decoder(14, 224)
 
 #test_model()

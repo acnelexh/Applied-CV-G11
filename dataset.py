@@ -60,7 +60,7 @@ class RandomTextDataset(data.Dataset):
     def __len__(self):
         return len(self.text)
 
-# Testing ground
+# Testing ground=================================================================================
 
 def test_text_encoder():
     "https://discuss.huggingface.co/t/last-hidden-state-vs-pooler-output-in-clipvisionmodel/26281"

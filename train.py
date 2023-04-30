@@ -13,17 +13,7 @@ from torchvision import models, utils
 from tensorboardX import SummaryWriter
 from sampler import InfiniteSamplerWrapper
 from dataset import ImageTokenDataset, RandomTextDataset
-from loss import get_content_loss, get_img_direction, get_text_direction, get_patch_loss, get_glob_loss
-
-
-def get_image_prior_losses(inputs_jit):
-    diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
-    diff2 = inputs_jit[:, :, :-1, :] - inputs_jit[:, :, 1:, :]
-    diff3 = inputs_jit[:, :, 1:, :-1] - inputs_jit[:, :, :-1, 1:]
-    diff4 = inputs_jit[:, :, :-1, :-1] - inputs_jit[:, :, 1:, 1:]
-
-    loss_var_l2 = torch.norm(diff1) + torch.norm(diff2) + torch.norm(diff3) + torch.norm(diff4)
-    return loss_var_l2
+from loss import get_content_loss, get_img_direction, get_text_direction, get_patch_loss, get_glob_loss, get_image_prior_losses
 
 def adjust_learning_rate(optimizer, iteration_count):
     """Imitating the original implementation"""
@@ -40,6 +30,7 @@ def warmup_learning_rate(optimizer, iteration_count):
 
 
 def main(args):  
+    # create the experiment dirs
     save_dir = Path(args.save_dir) / f"{args.exp_name}" / datetime.now().strftime("%Y%m%d-%H%M%S")
     print('mkdir', save_dir, '...')
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +50,7 @@ def main(args):
         os.mkdir(args.log_dir)
     writer = SummaryWriter(log_dir=args.log_dir)
     
-    
+    # load the model
     network = StyTR.StyTrans(args)
     network.to(args.device)
     network.train()
@@ -68,6 +59,7 @@ def main(args):
     for parameter in vgg.parameters():
         parameter.requires_grad_(False)
 
+    # load the CLIP model
     if args.clip_model == 'openai/clip-vit-base-patch16':
         model, _ = clip.load("ViT-B/16", device=args.device)
     elif args.clip_model == 'openai/clip-vit-base-patch32':
@@ -79,6 +71,7 @@ def main(args):
     for parameter in model.parameters():
         parameter.requires_grad_(False)
     
+    # load the dataset
     content_dataset = ImageTokenDataset(
         args.content_dir,
         device=args.device)
@@ -93,20 +86,17 @@ def main(args):
         sampler=InfiniteSamplerWrapper(content_dataset),
         num_workers=args.n_threads))
 
-    # TODO: check, returns text_features (text embedding), normalize? 
     style_iter = iter(data.DataLoader(
         style_dataset, batch_size=args.max_batch_size,
         sampler=InfiniteSamplerWrapper(style_dataset),
         num_workers=args.n_threads))
-    #print("The style iter is: \n")
-    #print(style_iter)
+    
     source_iter = iter(data.DataLoader(
         source_dataset, batch_size=args.max_batch_size,
         sampler=InfiniteSamplerWrapper(source_dataset),
         num_workers=args.n_threads))
     
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
-
 
     total_loss_epoch = []
 
@@ -123,12 +113,9 @@ def main(args):
         else:
             adjust_learning_rate(optimizer, iteration_count=iteration)
 
-        # print('learning_rate: %s' % str(optimizer.param_groups[0]['lr']))
         content_images, raw_images = next(content_iter) # TODO: should prob return both raw imgs and embeddings
         style_texts = next(style_iter)
-        source_texts = next(source_iter)
-        #print("The style texts are: ")
-        #print(style_texts)   
+        source_texts = next(source_iter)  
         targets = network(content_images, style_texts)
         
         content_loss = get_content_loss(raw_images, targets, vgg, device=args.device)
@@ -144,7 +131,7 @@ def main(args):
         text_direction = get_text_direction(source_texts, style_texts, model, args, device=args.device, glob=True)
         glob_loss = get_glob_loss(img_direction, text_direction)
 
-        #var_loss = get_image_prior_losses(targets) # total variation loss, should loop
+        # variation loss
         var_loss = 0
         for i in targets:
             img = i.unsqueeze(0)
@@ -176,7 +163,7 @@ def main(args):
             writer.add_scalar('dir loss: ', glob_loss.item())
             writer.add_scalar('TV loss: ', var_loss.item())
 
-        
+        # save images to keep track of progress
         if (iteration + 1) % (100 * update_every_n_iters) == 0:
             # save targets
             for idx, img in enumerate(targets):
@@ -189,6 +176,7 @@ def main(args):
                 # save image
                 PIL.Image.fromarray(img).save(Path(args.save_dir)/ f'iter_{iteration}_{idx}_{style_descrption}.png')
 
+        # model checkpoint
         if (iteration + 1) % (args.save_model_interval * update_every_n_iters) == 0 or (iteration + 1) == args.max_iter:
             state_dict = network.state_dict()
             for key in state_dict.keys():

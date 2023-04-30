@@ -7,6 +7,7 @@ from util.clip_utils import get_features
 from template import imagenet_templates
 
 class CLIPNormalizer():
+    '''Normalized the image according to CLIP's normalization'''
     def __init__(self, mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711],device='cuda'):
         self.transform = transforms.Compose([
             transforms.Normalize(mean=mean, std=std)])
@@ -15,6 +16,7 @@ class CLIPNormalizer():
         return self.transform(x)
 
 class VGGNormalizer():
+    '''Normalized the image according to VGG's normalization'''
     def __init__(self, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
         self.transform = transforms.Compose([
             transforms.Normalize(mean=mean, std=std)])
@@ -51,24 +53,31 @@ def get_content_loss(input_image, output_image, vgg, device='cuda'):
     # return content_loss
 
 def compose_text_with_templates(text: str, templates=imagenet_templates) -> list:
+    '''Prompt text with templates'''
     return [template.format(text) for template in templates]
 
 def get_text_direction(source_text, style_text, model, args, device='cpu', glob=True):
     '''
     Calculate text direction
+    args:
+        source_text: str
+        style_text: list of str
+        model: clip model
+        args: args
+        device: device
+        glob: whether to use global text direction by duplicating
+    output:
+        text_direction: tensor of shape (batch_size x num_crops) x 512
     '''
+    # calculating normalize source text embedding
     source_text = 'a photo'
     source_text = compose_text_with_templates(source_text, imagenet_templates)
-    #print("raw source text", source_text)
     source_text = clip.tokenize(source_text).to(device)
     source_text = model.encode_text(source_text)
-    #print("source text before normalizing", source_text)
     source_text = source_text.mean(axis=0, keepdim=True)
     source_text /= source_text.norm(dim=-1, keepdim=True) # 1 x 512
 
-    #print("The source text shape is: ", source_text.shape)
-    #print("source text after normalizing", source_text)
-    #exit()
+    # calculating normalize source style embedding
     tmp = []
     for style in style_text:
         style_text = compose_text_with_templates(style, imagenet_templates)
@@ -79,6 +88,7 @@ def get_text_direction(source_text, style_text, model, args, device='cpu', glob=
         tmp.append(style_text.squeeze(0))
     style_text = torch.stack(tmp, dim=0) # Batch x 512
 
+    # calculating text direction
     text_direction = (style_text - source_text) #TODO: make image_features[0] (64) an argument to pass in?
     text_direction = text_direction / text_direction.norm(dim=-1, keepdim=True)
 
@@ -95,6 +105,11 @@ def encode_img(images, model):
 def get_patches(imgs, args):
     '''
     Generate patches
+    args:
+        imgs: tensor of shape (batch_size x 3 x 224 x 224)
+        args: args
+    output:
+        img_aug: tensor of shape ((batch_size x num_crops) x 3 x 224 x 224)
     '''
     cropper = transforms.Compose(
         [transforms.RandomCrop(args.crop_size)]
@@ -117,6 +132,16 @@ def get_patches(imgs, args):
 def get_img_direction(input_img, output_img, args, model, patch=False):
     '''
     Calculate image direction
+    args:
+        input_img: tensor of shape (batch_size x 3 x 224 x 224)
+        output_img: tensor of shape (batch_size x 3 x 224 x 224)
+        args: args
+        model: clip model
+        patch: whether to use random crop and random perspective crop out images
+    output:
+        img_direction: tensor of shape 
+            (batch_size x num_crops) x 512 if patch == True
+            (batch_size) x 512 if patch == False
     '''
     normalizer = CLIPNormalizer()
     source_features = encode_img(input_img, model)
@@ -137,6 +162,12 @@ def get_img_direction(input_img, output_img, args, model, patch=False):
 def get_patch_loss(img_direction, text_direction, args):
     '''
     Calculate patch loss
+    args:
+        img_direction: tensor of shape (batch_size x num_crops) x 512
+        text_direction: tensor of shape (batch_size x num_crops) x 512
+        args: args
+    output:
+        patch_loss: mean loss of all patches
     '''
     tmp_loss = (1- torch.cosine_similarity(img_direction, text_direction, dim=1))
     tmp_loss[tmp_loss < args.thresh] = 0 
@@ -145,5 +176,30 @@ def get_patch_loss(img_direction, text_direction, args):
     return patch_loss
 
 def get_glob_loss(image_direction, text_direction):
+    '''
+    Calculate global loss
+    args:
+        image_direction: tensor of shape (batch_size) x 512
+        text_direction: tensor of shape (batch_size) x 512
+    output:
+        glob_loss: mean loss of all images
+    '''
     glob_loss = (1 - torch.cosine_similarity(image_direction, text_direction, dim=1)).mean()
     return glob_loss
+
+
+def get_image_prior_losses(inputs_jit):
+    '''
+    Calculate image prior losses
+    args:
+        inputs_jit: tensor of shape (batch_size x 3 x 224 x 224)
+    output:
+        loss_var_l2: mean variation loss of all images
+    '''
+    diff1 = inputs_jit[:, :, :, :-1] - inputs_jit[:, :, :, 1:]
+    diff2 = inputs_jit[:, :, :-1, :] - inputs_jit[:, :, 1:, :]
+    diff3 = inputs_jit[:, :, 1:, :-1] - inputs_jit[:, :, :-1, 1:]
+    diff4 = inputs_jit[:, :, :-1, :-1] - inputs_jit[:, :, 1:, 1:]
+
+    loss_var_l2 = torch.norm(diff1) + torch.norm(diff2) + torch.norm(diff3) + torch.norm(diff4)
+    return loss_var_l2
