@@ -13,7 +13,7 @@ The overall pipline of our model. First, we utilize CLIP to encode the content i
 
 ## Experiment
 ### Requirements
-* python 3.9
+* python 3.11.2
 * pytorch 2.0.0
 * torchvision 0.15.1
 * transformers 4.28.1
@@ -27,3 +27,10 @@ Training can be initiated by running <br>
 ./bin/train.sh
 ```
 The train.sh file contains all the necessary arguments and training parameter options needed to configure and execute the model's training process. To begin training the model, simply configure the desired parameters within the train.sh file and execute the script. This will initiate the training process, and the model will be optimized according to the specified configuration.
+
+Recommended install using bash and conda:
+conda create -n env_pytorch python=3.11.2
+conda activate env_pytorch
+pip install -r requirements.txt
+pip install git+https://github.com/openai/CLIP.git
+bash bin/train.sh

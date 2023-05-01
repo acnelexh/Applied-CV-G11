@@ -1,34 +1,34 @@
 #!/bin/bash
+
 python train.py \
-   --content_dir DIV2K_train_HR \
+   --content_dir input_content \
    --style_texts input_style/style.txt \
    --source_texts input_style/source.txt \
    --exp_name content_w_mse_and_patch_dir_loss \
    --save_dir experiments \
    --log_dir ./logs \
    --device cuda \
-   --lr 1e-4 \
+   --lr 0.001 \
    --lr_decay 1e-05 \
-   --max_iter 500000 \
-   --batch_size 32 \
-   --max_batch_size 2 \
-   --save_model_interval 1000 \
+   --max_iter 1000 \
+   --batch_size 1 \
+   --max_batch_size 1 \
+   --save_model_interval 1500 \
    --clip_model openai/clip-vit-base-patch16 \
-   --lambda_tv 0.0 \
-   --lambda_patch 4500.0 \
-   --lambda_dir 500.0 \
-   --lambda_c 20000.0 \
+   --lambda_tv 0.004 \
+   --lambda_patch 606.0 \
+   --lambda_dir 350.0 \
+   --lambda_c 960.0 \
    --n_threads 0 \
    --thresh 0.7 \
-   --crop_size 128 \
-   --num_crops 64 \
+   --crop_size 84 \
+   --num_crops 32 \
    --prompt_engineering True \
    --input_size 224 \
    --encoder_embed_dim 512 \
-   --encoder_ffn_dim 512 \
-   --encoder_depth 4 \
+   --encoder_ffn_dim 256 \
+   --encoder_depth 6 \
    --encoder_heads 8 \
    --encoder_dropout 0.1 \
    --encoder_activation relu \
    --encoder_normalize_before True \
-   --exp_name formal_training
